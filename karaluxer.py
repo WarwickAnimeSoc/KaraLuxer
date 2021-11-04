@@ -10,10 +10,10 @@ from ass.line import Dialogue
 
 # Globals
 OUTPUT_FOLDER = Path('./out')
-NOTE_LINE = ': {start} {duration} {pitch} {sound} \n'
+NOTE_LINE = ': {start} {duration} {pitch} {sound}\n'
 SEP_LINE = '- {0} \n'
 BEATS_PER_SECOND = 20
-TIMING_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9]+\}[a-z|A-Z]*)|({\\(?:k|kf|ko|K)[0-9]+[^}]*\})')
+TIMING_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9]+\}[a-z|A-Z|]+\s*)|({\\(?:k|kf|ko|K)[0-9]+[^}]*\})')
 
 
 def parse_subtitles(sub_file: Path) -> str:
@@ -38,6 +38,7 @@ def parse_subtitles(sub_file: Path) -> str:
     # Parse lines
     for line in dialogue_lines:
         # Set start of line markers.
+        print(line.text)
         current_beat = floor(line.start.total_seconds() * BEATS_PER_SECOND)
 
         # Get all syllables and timings for the line.
