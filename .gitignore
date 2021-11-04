@@ -1,0 +1,14 @@
+# Virtual environment
+venv/
+
+# VSCode files
+.vscode/
+
+# Python cache files
+__pycache__/
+
+# Temp folder
+tmp/
+
+# Output folder
+out/
