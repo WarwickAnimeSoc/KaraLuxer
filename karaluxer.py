@@ -3,18 +3,22 @@ from pathlib import Path
 from math import floor
 import re
 import shutil
+import subprocess
 
 import ass
 from ass.line import Dialogue
 
+import kara_api.kara_api as kapi
+
 
 # Globals
 OUTPUT_FOLDER = Path('./out')
+TMP_FOLDER = Path('./tmp')
 NOTE_LINE = ': {start} {duration} {pitch} {sound}\n'
 SEP_LINE = '- {0} \n'
 BEATS_PER_SECOND = 20
 TIMING_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9]+\}[a-z|A-Z|]+\s*)|({\\(?:k|kf|ko|K)[0-9]+[^}]*\})')
-
+KARA_URL_REGEX = re.compile(r'https:\/\/kara\.moe\/kara\/[\w-]+\/[\w-]+')
 
 def parse_subtitles(sub_file: Path) -> str:
     """Function to parse an ass file and convert the karaoke timings to the ultrastar format.
@@ -61,7 +65,6 @@ def parse_subtitles(sub_file: Path) -> str:
             duration = floor((duration_cs / 100) * BEATS_PER_SECOND)
 
             if sound:
-                # TODO Some form of basic automatic pitching.
                 # Duration is reduced by 1 to give gaps.
                 notes_string += NOTE_LINE.format(start=current_beat, duration=duration - 1, sound=sound, pitch=19)
 
@@ -80,24 +83,58 @@ def main(args: Namespace) -> None:
         args (Namespace): The command line arguments.
     """
 
-    base_name = '{0} - {1}'.format(args.artist, args.title)
+    # Get ID from URL
+    kara_id = args.url.split('/')[-1]
 
-    song_folder = OUTPUT_FOLDER.joinpath(base_name)
-    try:
-        song_folder.mkdir(parents=True)
-    except FileExistsError:
-        print('\033[0;31mError:\033[0m There is already an output for this song!')
-        return
+    # Make temp directory
+    tmp_data = TMP_FOLDER.joinpath(kara_id)
+    tmp_data.mkdir(parents=True, exist_ok=True)
 
-    # Load files.
-    audio_path = Path(args.audio)
-    ass_path = Path(args.ass)
+    # Get data from Kara
+    kara_data = kapi.get_kara_data(kara_id)
+
+    print('\033[0;34mInfo:\033[0m Downloading subtitles!')
+    kapi.get_sub_file(kara_data['sub_file'], tmp_data)
+    print('\033[0;34mInfo:\033[0m Downloading media!')
+    kapi.get_media_file(kara_data['media_file'], tmp_data)
+
+    bg_video_path = None
+
+    # Load downloaded file.
+    ass_path = Path(tmp_data.joinpath(kara_data['sub_file']))
+    media_path = Path(tmp_data.joinpath(kara_data['media_file']))
+    if media_path.suffix != '.mp3':
+        print('\033[0;34mInfo:\033[0m Converting media to mp3 using ffmpeg!')
+        audio_path = tmp_data.joinpath('{0}.mp3'.format(media_path.stem))
+        # Convert to mp3 using ffmpeg
+        ret_val = subprocess.call(['ffmpeg', '-i', str(media_path), '-b:a', '320', str(audio_path)],
+                                  stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.STDOUT)
+        if ret_val:
+            print('\033[0;31mError:\033[0m ffmpeg was not able to properly convert the media to mp3!')
+            return
+        if not args.background_video:
+            bg_video_path = media_path
+    else:
+        audio_path = media_path
+
+    # Load remaining files
     cover_path = Path(args.cover) if args.cover else None
     background_path = Path(args.background) if args.background else None
-    bg_video_path = Path(args.background_video) if args.background_video else None
+
+    # If a BG video file is provided via the command line, it will overwrite the downloaded one.
+    bg_video_path = Path(args.background_video) if args.background_video else bg_video_path
 
     # Parse subtitle file.
     notes_section = parse_subtitles(ass_path)
+
+    # Create output folder
+    base_name = '{0} - {1}'.format(kara_data['artists'], kara_data['title'])
+    song_folder = OUTPUT_FOLDER.joinpath(base_name)
+    if song_folder.exists():
+        print('\033[1;33mWarning:\033[0m Overwriting existing output.')
+        shutil.rmtree(song_folder)
+    song_folder.mkdir(parents=True)
 
     # Calculate BPM for ultrastar.
     # This script uses a fixed 'beats per second' to produce timings, the BPM for ultrastar is based off the fixed bps.
@@ -105,13 +142,12 @@ def main(args: Namespace) -> None:
     beats_per_minute = (BEATS_PER_SECOND * 60) / 4
 
     # Produce metadata section of the ultrastar file.
-    metadata = '#TITLE:{0}\n#ARTIST:{1}\n'.format(args.title, args.artist)
+    metadata = '#TITLE:{0}\n#ARTIST:{1}\n'.format(kara_data['title'], kara_data['artists'])
 
-    if args.language:
-        metadata += '#LANGUAGE:{0}\n'.format(args.language)
+    metadata += '#LANGUAGE:{0}\n'.format(kara_data['language'])
 
-    if args.creator:
-        metadata += '#CREATOR:{0}\n'.format(args.creator)
+    creator_string = kara_data['creator'] + (' & ' + args.creator) if args.creator else ''
+    metadata += '#CREATOR:{0}\n'.format(creator_string)
 
     # Produce files section of the ultrastar file.
     # Paths are made relative and files will be renamed to match the base name.
@@ -145,6 +181,9 @@ def main(args: Namespace) -> None:
     with open(ultrastar_file_path, 'w') as f:
         f.write(ultrastar_file)
 
+    # Delete downloads
+    shutil.rmtree(tmp_data)
+
     print('\033[0;32mSuccess:\033[0m The ultrastar project has been placed in the output folder!')
     print('\033[1;33mThe song should be checked manually for any mistakes\033[0m')
 
@@ -153,15 +192,12 @@ def init_argument_parser() -> ArgumentParser:
     '''Function to setup the command line argument parser.
 
     Adds the following arguments:
-        * `title`         Specifies the title of the song.
-        * `artist`        Specifies the song artist.
-        * `audio`         Path to the MP3 file for the song.
-        * `ass`           Path to the subtitle file to parse for timings.
+        * `url`           The karas.moe URL for the song.
         * `-co`           Path to the cover image for the song.
         * `-bg`           Path to the background image for the song.
         * `-bv`           Path to the background video for the song.
         * `-l`            Specifies the language the song is in.
-        * `-c`            Specifies the creator of the map.
+        * `-c`            Specifies the creator of the map (appends to the creator of the karas map).
 
     Returns:
         ArgumentParser: The command line parser for this program.
@@ -170,23 +206,8 @@ def init_argument_parser() -> ArgumentParser:
     parser = ArgumentParser()
 
     parser.add_argument(
-        'title',
-        help='The title of the song.',
-        type=str
-    )
-    parser.add_argument(
-        'artist',
-        help='The song artist.',
-        type=str
-    )
-    parser.add_argument(
-        'audio',
-        help='The path to the MP3 file for the song.',
-        type=str
-    )
-    parser.add_argument(
-        'ass',
-        help='The path to the subtitle file to parse for timings.',
+        'url',
+        help='The karas.moe URL for the song.',
         type=str
     )
     parser.add_argument(
@@ -208,15 +229,9 @@ def init_argument_parser() -> ArgumentParser:
         type=str
     )
     parser.add_argument(
-        '-l',
-        '--language',
-        help='The language the song is in.',
-        type=str
-    )
-    parser.add_argument(
         '-c',
         '--creator',
-        help='The creator of this map.',
+        help='The creator of this map (appends to the creator of the karas map).',
         type=str
     )
     return parser
@@ -233,14 +248,6 @@ def check_arg_paths(args: Namespace) -> bool:
     Returns:
         bool: True if all the paths are valid, else False.
     """
-
-    if not Path(args.audio).exists():
-        print('\033[0;31mError:\033[0m The specified audio file can not be found!')
-        return False
-
-    if not Path(args.ass).exists():
-        print('\033[0;31mError:\033[0m The specified subtitle file can not be found!')
-        return False
 
     if args.cover and not Path(args.cover).exists():
         print('\033[0;31mError:\033[0m The specified cover image file can not be found!')
@@ -270,8 +277,16 @@ def check_arg_paths(args: Namespace) -> bool:
     return True
 
 
+def check_arg_url(args: Namespace) -> bool:
+    if re.match(KARA_URL_REGEX, args.url):
+        return True
+    else:
+        print('\033[0;31mError:\033[0m Provided URL is not in the correct format!')
+        return False
+
+
 if __name__ == '__main__':
     parser = init_argument_parser()
     args = parser.parse_args()
-    if check_arg_paths(args):
+    if check_arg_paths(args) and check_arg_url(args):
         main(args)

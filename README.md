@@ -6,7 +6,8 @@ As Karaoke Mugen does not feature pitch mapping, only timings will be generated 
 
 ## How to run
 
-To run the script you need [python](https://www.python.org/) (Version 3.6 or newer).
+To run the script you need [python](https://www.python.org/) (Version 3.6 or newer) and
+[ffmpeg](https://www.ffmpeg.org/) must be installed and on your path.
 
 The requirements for the script can be installed using: `python -m pip install -r requirements.txt`.
 
@@ -14,35 +15,30 @@ The script can then be run from the terminal.
 
 ### Command usage
 
-Usage `python karaluxer.py <title> <artist> <audio> <ass> [options]`
+Usage `python karaluxer.py <url> [options]`
 
 The required arguments are:
 
-| Name     | Description                                                   |
-| -------- | ------------------------------------------------------------- |
-| `title`  | The title of the song.                                        |
-| `artist` | The song artist.                                              |
-| `audio`  | The path to the MP3 file for the song.                        |
-| `ass`    | The path to the subtitle (.ass) file to get the timings from. |
+| Name     | Description                                                                                                    |
+| -------- | -------------------------------------------------------------------------------------------------------------- |
+| `url`    | The kara URL for the song, should look like `https://kara.moe/kara/nexus/51a0ba0b-3bbb-4b49-a9f6-3e474e83d967` |
 
 The optional arguments are:
 
-| Name  | Description                                                   |
-| ----- | ------------------------------------------------------------- |
-| `-co` | The path to the cover image for the song.                     |
-| `-bg` | The path to the background image for the song.                |
-| `-bv` | The path to the background video for the song.                |
-| `-l`  | The language the song is in.                                  |
-| `-c`  | The creator of this map.                                      |
+| Name  | Description                                                                       |
+| ----- | --------------------------------------------------------------------------------- |
+| `-co` | The path to the cover image for the song.                                         |
+| `-bg` | The path to the background image for the song.                                    |
+| `-bv` | The path to the background video for the song.                                    |
+| `-c`  | The creator of this map. (This name is appended to the creator of the karas map)  |
 
 ## Example usage
 
 An example command is given below:
 
-`python karaluxer.py "The Top" "Ken Blast" "~/Downloads/Initial D/top.mp3" "~/Downloads/Initial D/top.ass" -l "English" -co "~/Downloads/Initial D/top.jpg" -bg "~/Downloads/Initial D/top_b.jpg" -bv "~/Downloads/Initial D/top.mp4"`
+`python karaluxer.py https://kara.moe/kara/nexus/51a0ba0b-3bbb-4b49-a9f6-3e474e83d967 -co "~/Downloads/nexus.jpg" -bg "~/Downloads/nexus_bg.jpg" -bv "~/Downloads/nexus_amv.mp4"`
 
 ## TODO
 
 - ~~Add support for basic automatic pitch detection.~~ (See branch `pitch-detection` but TL;DR pitch detection wasn't really good enough to keep working on.)
-- Add support for the [Kara Database](https://kara.moe/), so that the script simply requires a URL as input.
 - (Low Priority) Create a GUI / executable version.
