@@ -43,6 +43,6 @@ An example command is given below:
 
 ## TODO
 
-- Add support for basic automatic pitch detection.
+- ~~Add support for basic automatic pitch detection.~~ (See branch `pitch-detection` but TL;DR pitch detection wasn't really good enough to keep working on.)
 - Add support for the [Kara Database](https://kara.moe/), so that the script simply requires a URL as input.
 - (Low Priority) Create a GUI / executable version.

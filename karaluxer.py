@@ -38,7 +38,6 @@ def parse_subtitles(sub_file: Path) -> str:
     # Parse lines
     for line in dialogue_lines:
         # Set start of line markers.
-        print(line.text)
         current_beat = floor(line.start.total_seconds() * BEATS_PER_SECOND)
 
         # Get all syllables and timings for the line.
