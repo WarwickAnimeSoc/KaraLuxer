@@ -11,9 +11,9 @@ To run the script you need [python](https://www.python.org/) (Version 3.6 or new
 
 The requirements for the script can be installed using: `python -m pip install -r requirements.txt`.
 
-The script can then be run from the terminal.
+The script can then be run from the terminal, or using the GUI.
 
-### Command usage
+### Command Line usage
 
 Usage `python karaluxer.py <url> [options]`
 
@@ -32,7 +32,7 @@ The optional arguments are:
 | `-bv` | The path to the background video for the song.                                    |
 | `-c`  | The creator of this map. (This name is appended to the creator of the karas map)  |
 
-## Example usage
+#### Example Usage
 
 An example command is given below:
 
@@ -41,4 +41,5 @@ An example command is given below:
 ## TODO
 
 - ~~Add support for basic automatic pitch detection.~~ (See branch `pitch-detection` but TL;DR pitch detection wasn't really good enough to keep working on.)
-- (Low Priority) Create a GUI / executable version.
+- Prevent the closing of the GUI if the script is running.
+- Create bundled version.

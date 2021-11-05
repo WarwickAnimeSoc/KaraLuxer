@@ -146,7 +146,7 @@ def main(args: Namespace) -> None:
 
     metadata += '#LANGUAGE:{0}\n'.format(kara_data['language'])
 
-    creator_string = kara_data['creator'] + (' & ' + args.creator) if args.creator else ''
+    creator_string = kara_data['authors'] + ('' if not args.creator else (' & ' + args.creator))
     metadata += '#CREATOR:{0}\n'.format(creator_string)
 
     # Produce files section of the ultrastar file.
@@ -178,7 +178,7 @@ def main(args: Namespace) -> None:
 
     # Write file
     ultrastar_file_path = song_folder.joinpath('{0}.txt'.format(base_name))
-    with open(ultrastar_file_path, 'w') as f:
+    with open(ultrastar_file_path, 'w', encoding='utf-8') as f:
         f.write(ultrastar_file)
 
     # Delete downloads
@@ -283,6 +283,18 @@ def check_arg_url(args: Namespace) -> bool:
     else:
         print('\033[0;31mError:\033[0m Provided URL is not in the correct format!')
         return False
+
+
+def gui_entry_point(url: str, cover: str, background: str, video:str, creator: str) -> None:
+    """Function that serves as an entry-point for the GUI to use this file.
+
+    Args:
+        Correspond to the respective command line arguments.
+    """
+
+    args = Namespace(url=url, cover=cover, background=background, background_video=video, creator=creator)
+    if check_arg_paths(args) and check_arg_url(args):
+        main(args)
 
 
 if __name__ == '__main__':

@@ -46,13 +46,13 @@ def get_kara_data(kara_id: str) -> Dict[str, str]:
     artists = ''
     for singer in data['singers']:
         artists += singer['name'] + ' & '
-    kara_data['artists'] = artists[:-2]
+    kara_data['artists'] = artists[:-3]
 
     # Get mapper
     authors = ''
     for singer in data['authors']:
         authors += singer['name'] + ' & '
-    kara_data['authors'] = authors[:-2]
+    kara_data['authors'] = authors[:-3]
 
     return kara_data
 
