@@ -2,8 +2,8 @@ import sys
 import re
 import threading
 
-
-from PyQt5.QtWidgets import QApplication, QGridLayout, QGroupBox, QLabel, QLineEdit, QPushButton, QVBoxLayout, QDialog, QFileDialog
+from PyQt5.QtGui import QCloseEvent
+from PyQt5.QtWidgets import QApplication, QCheckBox, QGridLayout, QGroupBox, QLabel, QLineEdit, QPushButton, QVBoxLayout, QDialog, QFileDialog
 import karaluxer
 
 
@@ -66,6 +66,10 @@ class KaraLuxerApp(QDialog):
         optional_args_layout.addWidget(self.creator_input, 3, 1)
         optional_args_layout.addWidget(QLabel('(Appended to the Kara.moe map creator)'), 3, 2)
 
+        self.tv_checkbox = QCheckBox()
+        optional_args_layout.addWidget(QLabel('TV Sized:'), 4, 0)
+        optional_args_layout.addWidget(self.tv_checkbox, 4, 1)
+        optional_args_layout.addWidget(QLabel('(Will add "(TV)" to the song title)'), 4, 2)
 
         self.optional_args_group.setLayout(optional_args_layout)
 
@@ -101,6 +105,9 @@ class KaraLuxerApp(QDialog):
 
         self.setLayout(window_layout)
 
+        # Set the KaraLuxer logger to be the write function of this window.
+        karaluxer.log = self.write
+
         self.show()
 
     def get_file(self, target: QLineEdit, filter: str) -> None:
@@ -133,29 +140,40 @@ class KaraLuxerApp(QDialog):
                     self.cover_input.text(),
                     self.bg_input.text(),
                     self.bgv_input.text(),
-                    self.creator_input.text()
+                    self.creator_input.text(),
+                    self.tv_checkbox.isChecked()
                 ])
             self.process_thread.start()
 
     def write(self, message) -> None:
-        """Method used to override stdout to output to the window.
+        """Method used to write a message to the output area of the window.
 
         Args:
             message ([type]): The message received.
         """
 
         clean_message = re.sub(r'\033\[((?:[0-9];[0-9]+)|(?:0))m', '', message)
-        self.output_text.setText(self.output_text.text() + clean_message)
+        self.output_text.setText(self.output_text.text() + clean_message + '\n')
 
     def flush(self) -> None:
-        """Method use to override stdout to clear to the window."""
+        """Method used to clear the output area of the window."""
 
         self.output_text.setText('')
 
+    def closeEvent(self, a0: QCloseEvent) -> None:
+        """Method to override the default closing event. The window is prevented from closing if the script is running.
+
+        Args:
+            a0 (QCloseEvent): The close window event.
+        """
+
+        if self.process_thread and self.process_thread.is_alive():
+            print('Warning: Please wait for the program to finish before closing the window!')
+            a0.ignore()
+        else:
+            a0.accept()
 
 if __name__ == '__main__':
     app = QApplication([])
     window = KaraLuxerApp()
-    sys.stdout = window
-    sys.stderr = window
     sys.exit(app.exec_())

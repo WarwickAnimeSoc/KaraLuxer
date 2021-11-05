@@ -6,12 +6,17 @@ As Karaoke Mugen does not feature pitch mapping, only timings will be generated 
 
 ## How to run
 
+The easiest way to use the script is with the packaged executable, these can be found on the
+[releases](https://github.com/WarwickAnimeSoc/KaraLuxer/releases) page.
+
 To run the script you need [python](https://www.python.org/) (Version 3.6 or newer) and
 [ffmpeg](https://www.ffmpeg.org/) must be installed and on your path.
 
 The requirements for the script can be installed using: `python -m pip install -r requirements.txt`.
 
 The script can then be run from the terminal, or using the GUI.
+
+Once the script is done it will place the converted song inside the `out` folder.
 
 ### Command Line usage
 
@@ -30,7 +35,8 @@ The optional arguments are:
 | `-co` | The path to the cover image for the song.                                         |
 | `-bg` | The path to the background image for the song.                                    |
 | `-bv` | The path to the background video for the song.                                    |
-| `-c`  | The creator of this map. (This name is appended to the creator of the karas map)  |
+| `-c`  | The creator of this map (This name is appended to the creator of the karas map).  |
+| `-tv` | If passed the script will append (TV) to the song title.                          |
 
 #### Example Usage
 
@@ -41,5 +47,3 @@ An example command is given below:
 ## TODO
 
 - ~~Add support for basic automatic pitch detection.~~ (See branch `pitch-detection` but TL;DR pitch detection wasn't really good enough to keep working on.)
-- Prevent the closing of the GUI if the script is running.
-- Create bundled version.
