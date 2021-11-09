@@ -19,6 +19,7 @@ SEP_LINE = '- {0} \n'
 BEATS_PER_SECOND = 20
 TIMING_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9]+\}[a-zA-Z _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9]+[^}]*\})')
 KARA_URL_REGEX = re.compile(r'https:\/\/kara\.moe\/kara\/[\w-]+\/[\w-]+')
+VALID_FILENAME_REGEX = re.compile(r'[^\w\-. ]+')
 
 # FFMPEG path can either be bundled (./tools) or system.
 try:
@@ -149,7 +150,8 @@ def main(args: Namespace) -> None:
     # Create output folder
     title_string = kara_data['title'] + (' (TV)' if args.tv else '')
     base_name = '{0} - {1}'.format(kara_data['artists'], title_string)
-    song_folder = OUTPUT_FOLDER.joinpath(base_name)
+    sanitized_base_name = re.sub(VALID_FILENAME_REGEX, '', base_name)
+    song_folder = OUTPUT_FOLDER.joinpath(sanitized_base_name)
     if song_folder.exists():
         log('\033[1;33mWarning:\033[0m Overwriting existing output.')
         shutil.rmtree(song_folder)
@@ -170,22 +172,22 @@ def main(args: Namespace) -> None:
 
     # Produce files section of the ultrastar file.
     # Paths are made relative and files will be renamed to match the base name.
-    mp3_name = '{0}.mp3'.format(base_name)
+    mp3_name = '{0}.mp3'.format(sanitized_base_name)
     linked_files = '#MP3:{0}\n'.format(mp3_name)
     shutil.copy(audio_path, song_folder.joinpath(mp3_name))
 
     if cover_path:
-        cover_name = '{0} [CO]{1}'.format(base_name, cover_path.suffix)
+        cover_name = '{0} [CO]{1}'.format(sanitized_base_name, cover_path.suffix)
         linked_files += '#COVER:{0}\n'.format(cover_name)
         shutil.copy(cover_path, song_folder.joinpath(cover_name))
 
     if background_path:
-        background_name = '{0} [BG]{1}'.format(base_name, background_path.suffix)
+        background_name = '{0} [BG]{1}'.format(sanitized_base_name, background_path.suffix)
         linked_files += '#BACKGROUND:{0}\n'.format(background_name)
         shutil.copy(background_path, song_folder.joinpath(background_name))
 
     if bg_video_path:
-        bg_video_name = '{0}{1}'.format(base_name, bg_video_path.suffix)
+        bg_video_name = '{0}{1}'.format(sanitized_base_name, bg_video_path.suffix)
         linked_files += '#VIDEO:{0}\n'.format(bg_video_name)
         shutil.copy(bg_video_path, song_folder.joinpath(bg_video_name))
 
@@ -196,7 +198,7 @@ def main(args: Namespace) -> None:
     ultrastar_file = metadata + linked_files + song_data + notes_section + 'E\n'
 
     # Write file
-    ultrastar_file_path = song_folder.joinpath('{0}.txt'.format(base_name))
+    ultrastar_file_path = song_folder.joinpath('{0}.txt'.format(sanitized_base_name))
     with open(ultrastar_file_path, 'w', encoding='utf-8') as f:
         f.write(ultrastar_file)
 
