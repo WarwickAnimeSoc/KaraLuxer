@@ -16,10 +16,10 @@ OUTPUT_FOLDER = Path('./out')
 TMP_FOLDER = Path('./tmp')
 NOTE_LINE = ': {start} {duration} {pitch} {sound}\n'
 SEP_LINE = '- {0} \n'
-BEATS_PER_SECOND = 20
+BEATS_PER_SECOND = 100
 TIMING_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9]+\}[a-zA-Z _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9]+[^}]*\})')
 KARA_URL_REGEX = re.compile(r'https:\/\/kara\.moe\/kara\/[\w-]+\/[\w-]+')
-VALID_FILENAME_REGEX = re.compile(r'[^\w\-. ]+')
+VALID_FILENAME_REGEX = re.compile(r'[^\w\-.() ]+')
 
 # FFMPEG path can either be bundled (./tools) or system.
 try:
@@ -84,7 +84,8 @@ def parse_subtitles(sub_file: Path) -> str:
 
             if sound:
                 # Duration is reduced by 1 to give gaps.
-                notes_string += NOTE_LINE.format(start=current_beat, duration=duration - 1, sound=sound, pitch=19)
+                tweaked_duration = duration if (duration == 1) else duration - 1
+                notes_string += NOTE_LINE.format(start=current_beat, duration=tweaked_duration, sound=sound, pitch=19)
 
             current_beat += duration
 
