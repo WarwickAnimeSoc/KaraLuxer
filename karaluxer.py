@@ -245,12 +245,12 @@ def init_argument_parser() -> ArgumentParser:
     '''Function to setup the command line argument parser.
 
     Adds the following arguments:
-        * `url`           The karas.moe URL for the song.
+        * `url`           The kara.moe URL for the song.
         * `-co`           Path to the cover image for the song.
         * `-bg`           Path to the background image for the song.
         * `-bv`           Path to the background video for the song.
         * `-l`            Specifies the language the song is in.
-        * `-c`            Specifies the creator of the map (appends to the creator of the karas map).
+        * `-c`            Specifies the creator of the map (appends to the creator of the kara map).
         * `tv`            If set then (TV) is appended to the song title.
 
     Returns:
@@ -261,7 +261,7 @@ def init_argument_parser() -> ArgumentParser:
 
     parser.add_argument(
         'url',
-        help='The karas.moe URL for the song.',
+        help='The kara.moe URL for the song.',
         type=str
     )
     parser.add_argument(
@@ -285,7 +285,7 @@ def init_argument_parser() -> ArgumentParser:
     parser.add_argument(
         '-c',
         '--creator',
-        help='The creator of this map (appends to the creator of the karas map).',
+        help='The creator of this map (appends to the creator of the kara map).',
         type=str
     )
     parser.add_argument(
