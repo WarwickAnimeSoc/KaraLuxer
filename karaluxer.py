@@ -17,7 +17,7 @@ TMP_FOLDER = Path('./tmp')
 NOTE_LINE = ': {start} {duration} {pitch} {sound}\n'
 SEP_LINE = '- {0} \n'
 BEATS_PER_SECOND = 100
-TIMING_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9]+\}[a-zA-Z _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9]+[^}]*\})')
+TIMING_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9.]+\}[a-zA-Z _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})')
 KARA_URL_REGEX = re.compile(r'https:\/\/kara\.moe\/kara\/[\w-]+\/[\w-]+')
 VALID_FILENAME_REGEX = re.compile(r'[^\w\-.() ]+')
 
@@ -74,8 +74,8 @@ def parse_subtitles(sub_file: Path) -> str:
                 log('\033[1;33mWarning:\033[0m Something unexpected was found in line - {0}'.format(line.text))
                 continue
 
-            timing = re.sub(r'[^0-9]', '', timing)
-            syllables.append((int(timing), sound))
+            timing = re.sub(r'[^0-9.]', '', timing)
+            syllables.append((round(float(timing)), sound))
 
         # Write out ultrastar timings.
         for duration_cs, sound in syllables:
