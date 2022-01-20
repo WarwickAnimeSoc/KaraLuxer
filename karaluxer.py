@@ -58,9 +58,21 @@ def parse_subtitles(sub_file: Path) -> str:
     dialogue_lines = [event for event in sub_data.events if isinstance(event, Dialogue)]
 
     # Parse lines
-    for line in dialogue_lines:
+    for i in range(0, len(dialogue_lines)):
+        # Get line to work on
+        line = dialogue_lines[i]
+
         # Set start of line markers.
         current_beat = floor(line.start.total_seconds() * BEATS_PER_SECOND)
+
+        # Get early cut off value for second line
+        # This should help with songs where the next line is displayed right before the previous line ends
+        # E.G. https://kara.moe/kara/top/2de4b0fa-a8c1-4784-a1a1-23ec970954e0
+        if i != len(dialogue_lines) - 1:
+            next_line = dialogue_lines[i + 1]
+            next_line_start_beat = floor(next_line.start.total_seconds() * BEATS_PER_SECOND) + 90
+        else:
+            next_line_start_beat = None
 
         # Get all syllables and timings for the line.
         syllables = []
@@ -78,16 +90,32 @@ def parse_subtitles(sub_file: Path) -> str:
             syllables.append((round(float(timing)), sound))
 
         # Write out ultrastar timings.
+        early_break = False
         for duration_cs, sound in syllables:
+            # This conditional will be run if a line overruns on a syllable that is not the last one in the line.
+            if early_break:
+                log('\033[1;33mWarning:\033[0m Had to abort mapping line "{0}" early!'.format(line.text))
+                break
+
             # Karaoke timings in ass files are given in centiseconds.
             duration = floor((duration_cs / 100) * BEATS_PER_SECOND)
 
             if sound:
                 # Duration is reduced by 1 to give gaps.
                 tweaked_duration = duration if (duration == 1) else duration - 1
+
+                # If the current note will cross over into the start of the next line, clap its duration.
+                if next_line_start_beat and current_beat + tweaked_duration > next_line_start_beat:
+                    tweaked_duration = next_line_start_beat - current_beat - 1
+                    warning_string = ('\033[1;33mWarning:\033[0m'
+                                    'Exceeded start of next line at beat {0}. Clamping current note legnth')
+                    log(warning_string.format(current_beat))
+                    early_break = True
+
                 notes_string += NOTE_LINE.format(start=current_beat, duration=tweaked_duration, sound=sound, pitch=19)
 
             current_beat += duration
+
 
         # Write line separator for ultrastar.
         notes_string += SEP_LINE.format(current_beat)
@@ -170,6 +198,9 @@ def main(args: Namespace) -> None:
 
     creator_string = kara_data['authors'] + ('' if not args.creator else (' & ' + args.creator))
     metadata += '#CREATOR:{0}\n'.format(creator_string)
+
+    # Mark song as a Karaluxer port
+    metadata += '#KARALUXERMAP\n'
 
     # Produce files section of the ultrastar file.
     # Paths are made relative and files will be renamed to match the base name.
