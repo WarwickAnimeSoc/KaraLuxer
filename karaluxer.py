@@ -11,6 +11,9 @@ from ass.line import Dialogue
 
 import kara_api.kara_api as kapi
 
+
+KARALUXER_VERSION = '1.0.5'
+
 # Globals
 OUTPUT_FOLDER = Path('./out')
 TMP_FOLDER = Path('./tmp')
@@ -200,7 +203,7 @@ def main(args: Namespace) -> None:
     metadata += '#CREATOR:{0}\n'.format(creator_string)
 
     # Mark song as a Karaluxer port
-    metadata += '#KARALUXERMAP\n'
+    metadata += '#KARALUXERMAP:{0}\n'.format(KARALUXER_VERSION)
 
     # Produce files section of the ultrastar file.
     # Paths are made relative and files will be renamed to match the base name.
