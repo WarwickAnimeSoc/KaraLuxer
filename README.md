@@ -14,36 +14,4 @@ To run the script you need [python](https://www.python.org/) (Version 3.6 or new
 
 The requirements for the script can be installed using: `python -m pip install -r requirements.txt`.
 
-The script can then be run from the terminal, or using the GUI.
-
 Once the script is done it will place the converted song inside the `out` folder.
-
-### Command Line usage
-
-Usage `python karaluxer.py <url> [options]`
-
-The required arguments are:
-
-| Name     | Description                                                                                                    |
-| -------- | -------------------------------------------------------------------------------------------------------------- |
-| `url`    | The kara URL for the song, should look like `https://kara.moe/kara/nexus/51a0ba0b-3bbb-4b49-a9f6-3e474e83d967` |
-
-The optional arguments are:
-
-| Name  | Description                                                                       |
-| ----- | --------------------------------------------------------------------------------- |
-| `-co` | The path to the cover image for the song.                                         |
-| `-bg` | The path to the background image for the song.                                    |
-| `-bv` | The path to the background video for the song.                                    |
-| `-c`  | The creator of this map (This name is appended to the creator of the karas map).  |
-| `-tv` | If passed the script will append (TV) to the song title.                          |
-
-#### Example Usage
-
-An example command is given below:
-
-`python karaluxer.py https://kara.moe/kara/nexus/51a0ba0b-3bbb-4b49-a9f6-3e474e83d967 -co "~/Downloads/nexus.jpg" -bg "~/Downloads/nexus_bg.jpg" -bv "~/Downloads/nexus_amv.mp4"`
-
-## TODO
-
-- ~~Add support for basic automatic pitch detection.~~ (See branch `pitch-detection` but TL;DR pitch detection wasn't really good enough to keep working on.)

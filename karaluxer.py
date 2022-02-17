@@ -1,369 +1,611 @@
-import sys
-from argparse import ArgumentParser, Namespace
+from typing import List, Optional, Tuple, Union
+
 from pathlib import Path
-from math import floor
+from datetime import datetime
+import sys
 import re
 import shutil
 import subprocess
+from math import ceil, floor
+
+from PyQt5 import QtCore
+from PyQt5.QtWidgets import (QApplication, QMessageBox, QGridLayout, QGroupBox, QLabel, QLineEdit, QPushButton,
+    QDialog, QFileDialog, QCheckBox, QVBoxLayout)
 
 import ass
-from ass.line import Dialogue
+from ass.line import _Event, Dialogue, Comment
 
 import kara_api.kara_api as kapi
 
+# ----------------------------
+# Type Aliases
+# ----------------------------
+CommentList = List[_Event]
 
-KARALUXER_VERSION = '1.0.5'
+# ----------------------------
+# Regex
+# ----------------------------
 
-# Globals
-OUTPUT_FOLDER = Path('./out')
-TMP_FOLDER = Path('./tmp')
-NOTE_LINE = ': {start} {duration} {pitch} {sound}\n'
-SEP_LINE = '- {0} \n'
-BEATS_PER_SECOND = 100
+# Regex to extract timing information from a line.
 TIMING_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9.]+\}[a-zA-Z _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})')
+
+# Regex to check a kara.moe url is valid.
 KARA_URL_REGEX = re.compile(r'https:\/\/kara\.moe\/kara\/[\w-]+\/[\w-]+')
+
+# Regex to check if a character is valid to be used in a for Windows (10).
 VALID_FILENAME_REGEX = re.compile(r'[^\w\-.() ]+')
 
-# FFMPEG path can either be bundled (./tools) or system.
-try:
-    FFMPEG_PATH = Path(getattr(sys, '_MEIPASS'), 'ffmpeg.exe')
-except AttributeError:
-    FFMPEG_PATH = 'ffmpeg'
+# ----------------------------
+# Constants
+# ----------------------------
+VERSION = '2.0.0'  # KaraLuxer script version.
 
+OUTPUT_FOLDER = Path('./out')  # Directory where processed ultrastar songs are placed.
+TMP_FOLDER = Path('./tmp')  # Directory where Kara.moe files are downloaded to.
+NOTE_LINE = ': {start} {duration} {pitch} {sound}\n'  # Ultrastar format standard sung line.
+SEP_LINE = '- {}\n'  # Ultrastar format line seperator.
 
-def log(message: str):
-    """Procedure to log a message.
+BEATS_PER_SECOND = 100  # Beats per second for the ultrastar map. Subfiles use centiseconds for timing.
+DEFAULT_PITCH = 19  # Default pitch to set notes to.
+
+FFMPEG_PATH = Path(getattr(sys, '_MEIPASS'), 'ffmpeg.exe') if getattr(sys, '_MEIPASS', False) else 'ffmpeg.exe'
+
+# ----------------------------
+# Program
+# ----------------------------
+
+def clean_line_text(line: _Event) -> str:
+    """Cleans all special data from the line text to get just the spoken Comment.
 
     Args:
-        message (str): The message to log.
-    """
-
-    print(message)
-
-
-def parse_subtitles(sub_file: Path) -> str:
-    """Function to parse an ass file and convert the karaoke timings to the ultrastar format.
-
-    Args:
-        sub_file (Path): The path to the ass file.
+        line (Comment): The Comment event to clean.
 
     Returns:
-        str: The notes, mapped to the ultrastar format.
+        str: A string of only the spoken Comment from the line.
     """
 
-    with open(sub_file, 'r', encoding='utf-8-sig') as f:
-        sub_data = ass.parse(f)
+    return re.sub(r'\{(.*?)\}', '', line.text)
 
-    # Output.
-    notes_string = ''
 
-    # Filter out comments.
-    dialogue_lines = [event for event in sub_data.events if isinstance(event, Dialogue)]
+class OverlapSelectionWindow(QDialog):
+    """Window used to choose between overlapping lines."""
 
-    # Parse lines
-    for i in range(0, len(dialogue_lines)):
-        # Get line to work on
-        line = dialogue_lines[i]
+    def select_line_callback(self, line_index: int) -> None:
+        """Callback function connected to the line buttons. Used to set the selected line and close the window.
 
-        # Set start of line markers.
-        current_beat = floor(line.start.total_seconds() * BEATS_PER_SECOND)
+        Args:
+            line_index (int): The index of the selected line in the self.lines list.
+        """
 
-        # Get early cut off value for second line
-        # This should help with songs where the next line is displayed right before the previous line ends
-        # E.G. https://kara.moe/kara/top/2de4b0fa-a8c1-4784-a1a1-23ec970954e0
-        if i != len(dialogue_lines) - 1:
-            next_line = dialogue_lines[i + 1]
-            next_line_start_beat = floor(next_line.start.total_seconds() * BEATS_PER_SECOND) + 90
+        self.selected_line = self.lines[line_index]
+        self.close()
+
+    def __init__(self, overlapping_lines: CommentList) -> None:
+        """Constructor for the OverlapSelectionWindow.
+
+        Args:
+            overlapping_lines (CommentList): A list containing all the overlapping Comment events.
+        """
+        super().__init__()
+
+        # Line data
+        self.lines = overlapping_lines
+        self.selected_line = None
+
+        # Window settings and Flags
+        self.setWindowTitle('Choose a line to discard')
+        self.setGeometry(20, 20, 600, 200)
+        self.setWindowFlag(QtCore.Qt.WindowCloseButtonHint, False)
+
+        # Window layout
+        window_layout = QGridLayout()
+        self.setLayout(window_layout)
+
+        # Information
+        info_label = QLabel('The following lines overlap, please select one to DISCARD.')
+        window_layout.addWidget(info_label, 0, 0)
+
+        # Lines
+        for i in range(0, len(self.lines)):
+            current_line = self.lines[i]
+            button_string = 'Time = {0} | Style = \"{1}\" | Text = {2}'.format(
+                current_line.start,
+                current_line.style,
+                clean_line_text(current_line)
+                )
+            line_button = QPushButton(button_string)
+            line_button.clicked.connect(lambda _, x=i: self.select_line_callback(x))
+            window_layout.addWidget(line_button)
+
+
+class KaraLuxer(QDialog):
+    """Main KaraLuxer window."""
+
+    # Message severity levels
+    LVL_ERROR = 2
+    LVL_WARNING = 1
+    LVL_INFO = 0
+
+    def get_file(self, target: QLineEdit, filter: str) -> None:
+        """Method to get the path to a file and update a target to hold the filepath.
+
+        Args:
+            target (QLineEdit): The target widget to update.
+            filter (str): The filter to use for the file picker.
+        """
+
+        file_Comment = QFileDialog()
+        file_Comment.setFileMode(QFileDialog.ExistingFile)
+        file_Comment.setNameFilter(filter)
+
+        if file_Comment.exec_() == QDialog.Accepted:
+            target.setText(file_Comment.selectedFiles()[0])
+
+    def __init__(self) -> None:
+        """Constructor for the KaraLuxer window."""
+        super().__init__()
+
+        self.setWindowTitle('KaraLuxer')
+        self.setGeometry(20, 20, 600, 800)
+
+        self.process_thread = None
+
+        # ----------------------------------------------------
+        # Essential Arguments group
+        # ----------------------------------------------------
+        self.essential_args_group = QGroupBox('Essential Parameters')
+        essential_args_layout = QGridLayout()
+
+        self.kara_url_input = QLineEdit()
+        essential_args_layout.addWidget(QLabel('Kara.moe URL:'), 0, 0)
+        essential_args_layout.addWidget(self.kara_url_input, 0, 1)
+
+        self.cover_input = QLineEdit()
+        essential_args_layout.addWidget(QLabel('Cover Image:'), 1, 0)
+        essential_args_layout.addWidget(self.cover_input, 1, 1)
+        cover_button = QPushButton('Browse')
+        cover_button.clicked.connect(lambda: self.get_file(self.cover_input, "Image files (*.jpg *.jpeg *.png)"))
+        essential_args_layout.addWidget(cover_button, 1, 2)
+
+        self.essential_args_group.setLayout(essential_args_layout)
+
+        # ----------------------------------------------------
+        # Optional Arguments group
+        # ----------------------------------------------------
+        self.optional_args_group = QGroupBox('Optional Parameters')
+        optional_args_layout = QGridLayout()
+        optional_args_layout.setColumnStretch(0, 1)
+        optional_args_layout.setColumnStretch(1, 2)
+        optional_args_layout.setColumnStretch(2, 1)
+
+        self.bg_input = QLineEdit()
+        self.bg_input.setPlaceholderText('Only visible if no background video is available.')
+        optional_args_layout.addWidget(QLabel('Background Image:'), 0, 0)
+        optional_args_layout.addWidget(self.bg_input, 0, 1)
+        bg_button = QPushButton('Browse')
+        bg_button.clicked.connect(lambda: self.get_file(self.bg_input, "Image files (*.jpg *.jpeg *.png)"))
+        optional_args_layout.addWidget(bg_button, 0, 2)
+
+        self.bgv_input = QLineEdit()
+        self.bgv_input.setPlaceholderText('Replaces the kara.moe video.')
+        optional_args_layout.addWidget(QLabel('Background Video:'), 1, 0)
+        optional_args_layout.addWidget(self.bgv_input, 1, 1)
+        bgv_button = QPushButton('Browse')
+        bgv_button.clicked.connect(lambda: self.get_file(self.bgv_input, "Mp4 files (*.mp4)"))
+        optional_args_layout.addWidget(bgv_button, 1, 2)
+
+        self.creator_input = QLineEdit()
+        optional_args_layout.addWidget(QLabel('Creator:'), 2, 0)
+        optional_args_layout.addWidget(self.creator_input, 2, 1)
+        optional_args_layout.addWidget(QLabel('(Appended to the Kara.moe map creator)'), 2, 2)
+
+        self.tv_checkbox = QCheckBox()
+        optional_args_layout.addWidget(QLabel('TV Sized:'), 3, 0)
+        optional_args_layout.addWidget(self.tv_checkbox, 3, 1)
+        optional_args_layout.addWidget(QLabel('(Will add "(TV)" to the song title)'), 3, 2)
+
+        self.optional_args_group.setLayout(optional_args_layout)
+
+        # ----------------------------------------------------
+        # Run Button
+        # ----------------------------------------------------
+
+        run_button = QPushButton('Run')
+        run_button.clicked.connect(self.run)
+
+        # ----------------------------------------------------
+        # Output
+        # ----------------------------------------------------
+
+        self.output_group = QGroupBox('Program Output')
+        output_layout = QGridLayout()
+
+        self.output_text = QLabel('Not Running')
+        output_layout.addWidget(self.output_text)
+
+        self.output_group.setLayout(output_layout)
+
+        # ----------------------------------------------------
+        # Base Window
+        # ----------------------------------------------------
+        window_layout = QVBoxLayout()
+        window_layout.addWidget(self.essential_args_group)
+        window_layout.addWidget(self.optional_args_group)
+        window_layout.addWidget(run_button)
+        window_layout.addWidget(self.output_group)
+
+        window_layout.addStretch(3)
+
+        self.setLayout(window_layout)
+
+    def display_message(self, level: int, message: str):
+        """Displays an Info, Warning or Error message.
+
+        Args:
+            level (int): The level of the message, should be a constant prefixed LVL_
+            message (str): The message to display.
+        """
+
+        message_window = QMessageBox()
+        if level == self.LVL_INFO:
+            message_window.setIcon(QMessageBox.Information)
+            message_window.setWindowTitle('Info')
+        elif level == self.LVL_WARNING:
+            message_window.setIcon(QMessageBox.Warning)
+            message_window.setWindowTitle('Warning')
         else:
-            next_line_start_beat = None
+            message_window.setIcon(QMessageBox.Critical)
+            message_window.setWindowTitle('Error')
 
-        # Get all syllables and timings for the line.
-        syllables = []
-        for sound_line, timing_line in re.findall(TIMING_REGEX, line.text):
-            if sound_line:
-                timing, sound = sound_line.split('}')
-            elif timing_line:
-                timing = timing_line.split('\\')[1]
-                sound = None
-            else:
-                log('\033[1;33mWarning:\033[0m Something unexpected was found in line - {0}'.format(line.text))
-                continue
+        message_window.setText(message)
+        message_window.exec()
 
-            timing = re.sub(r'[^0-9.]', '', timing)
-            syllables.append((round(float(timing)), sound))
+    def get_sub_lines(self, sub_file: Path) -> CommentList:
+        """Gets all the Comment events from a given subtitle file.
 
-        # Write out ultrastar timings.
-        early_break = False
-        for duration_cs, sound in syllables:
-            # This conditional will be run if a line overruns on a syllable that is not the last one in the line.
-            if early_break:
-                log('\033[1;33mWarning:\033[0m Had to abort mapping line "{0}" early!'.format(line.text))
-                break
+        Args:
+            sub_file (Path): The path to the subtitle file.
 
-            # Karaoke timings in ass files are given in centiseconds.
-            duration = floor((duration_cs / 100) * BEATS_PER_SECOND)
+        Returns:
+            List[ass.Comment]: A list containing all the Comment events from the subtitle file, ordered by their starting
+                                time.
+        """
 
-            if sound:
-                # Duration is reduced by 1 to give gaps.
-                tweaked_duration = duration if (duration == 1) else duration - 1
+        with open(sub_file, 'r', encoding='utf-8-sig') as f:
+            sub_data = ass.parse(f)
 
-                # If the current note will cross over into the start of the next line, clap its duration.
-                if next_line_start_beat and current_beat + tweaked_duration > next_line_start_beat:
-                    tweaked_duration = next_line_start_beat - current_beat - 1
-                    warning_string = ('\033[1;33mWarning:\033[0m'
-                                    'Exceeded start of next line at beat {0}. Clamping current note legnth')
-                    log(warning_string.format(current_beat))
-                    early_break = True
+        # Filter out comment lines.
+        line_list = [event for event in sub_data.events if isinstance(event, Comment)]
 
-                notes_string += NOTE_LINE.format(start=current_beat, duration=tweaked_duration, sound=sound, pitch=19)
+        # In the special case where comments are not used:
+        # e.g https://kara.moe/kara/rock-over-japan/68a57800-9b23-4c62-bcc8-a77fb103b798
+        # The Dialogue is used.
+        if not line_list:
+            line_list = [event for event in sub_data.events if isinstance(event, Dialogue)]
 
-            current_beat += duration
+        # Sort lines to be in order of their starting time.
+        line_list.sort(key=lambda line: line.start)
 
+        return line_list
 
-        # Write line separator for ultrastar.
-        notes_string += SEP_LINE.format(current_beat)
+    def filter_overlaping_lines(self, lines: CommentList) -> CommentList:
+        """Filters the Comment events to remove any overlapping lines.
 
-    return notes_string
+        Args:
+            lines (CommentList): The list of all Comment events in the subtitle file.
 
+        Returns:
+            CommentList: A filtered list of non-overlapping Comment events.
+        """
 
-def main(args: Namespace) -> None:
-    """The main driver for the script.
+        overlap_found = True
 
-    Args:
-        args (Namespace): The command line arguments.
-    """
+        while overlap_found:
+            overlap_found = False
 
-    # Get ID from URL
-    kara_id = args.url.split('/')[-1]
+            remove_line = None
 
-    # Make temp directory
-    tmp_data = TMP_FOLDER.joinpath(kara_id)
-    if tmp_data.exists():
-        shutil.rmtree(tmp_data)
-    tmp_data.mkdir(parents=True, exist_ok=False)
+            for i in range(0, len(lines)):
+                current_line = lines[i]
 
-    # Get data from Kara
-    kara_data = kapi.get_kara_data(kara_id)
+                current_line_end_beat = floor(current_line.end.total_seconds() * BEATS_PER_SECOND)
 
-    log('\033[0;34mInfo:\033[0m Downloading subtitles!')
-    kapi.get_sub_file(kara_data['sub_file'], tmp_data)
-    log('\033[0;34mInfo:\033[0m Downloading media!')
-    kapi.get_media_file(kara_data['media_file'], tmp_data)
+                overlap_group = [current_line]
 
-    bg_video_path = None
-
-    # Load downloaded file.
-    ass_path = Path(tmp_data.joinpath(kara_data['sub_file']))
-    media_path = Path(tmp_data.joinpath(kara_data['media_file']))
-    if media_path.suffix != '.mp3':
-        log('\033[0;34mInfo:\033[0m Converting media to mp3 using ffmpeg!')
-        audio_path = tmp_data.joinpath('{0}.mp3'.format(media_path.stem))
-        # Convert to mp3 using ffmpeg
-        ret_val = subprocess.call([str(FFMPEG_PATH), '-i', str(media_path), '-b:a', '320k', str(audio_path)])
-
-        if ret_val:
-            log('\033[0;31mError:\033[0m ffmpeg was not able to properly convert the media to mp3!')
-            return
-        if not args.background_video:
-            bg_video_path = media_path
-    else:
-        audio_path = media_path
-
-    # Load remaining files
-    cover_path = Path(args.cover) if args.cover else None
-    background_path = Path(args.background) if args.background else None
-
-    # If a BG video file is provided via the command line, it will overwrite the downloaded one.
-    bg_video_path = Path(args.background_video) if args.background_video else bg_video_path
-
-    # Parse subtitle file.
-    notes_section = parse_subtitles(ass_path)
-
-    # Create output folder
-    title_string = kara_data['title'] + (' (TV)' if args.tv else '')
-    base_name = '{0} - {1}'.format(kara_data['artists'], title_string)
-    sanitized_base_name = re.sub(VALID_FILENAME_REGEX, '', base_name)
-    song_folder = OUTPUT_FOLDER.joinpath(sanitized_base_name)
-    if song_folder.exists():
-        log('\033[1;33mWarning:\033[0m Overwriting existing output.')
-        shutil.rmtree(song_folder)
-    song_folder.mkdir(parents=True)
-
-    # Calculate BPM for ultrastar.
-    # This script uses a fixed 'beats per second' to produce timings, the BPM for ultrastar is based off the fixed bps.
-    # The BPM put into the ultrastar file needs to be around 1/4 of the calculated BPM (I'm not sure why).
-    beats_per_minute = (BEATS_PER_SECOND * 60) / 4
-
-    # Produce metadata section of the ultrastar file.
-    metadata = '#TITLE:{0}\n#ARTIST:{1}\n'.format(title_string, kara_data['artists'])
-
-    metadata += '#LANGUAGE:{0}\n'.format(kara_data['language'])
-
-    creator_string = kara_data['authors'] + ('' if not args.creator else (' & ' + args.creator))
-    metadata += '#CREATOR:{0}\n'.format(creator_string)
-
-    # Mark song as a Karaluxer port
-    metadata += '#KARALUXERMAP:{0}\n'.format(KARALUXER_VERSION)
-
-    # Produce files section of the ultrastar file.
-    # Paths are made relative and files will be renamed to match the base name.
-    mp3_name = '{0}.mp3'.format(sanitized_base_name)
-    linked_files = '#MP3:{0}\n'.format(mp3_name)
-    shutil.copy(audio_path, song_folder.joinpath(mp3_name))
-
-    if cover_path:
-        cover_name = '{0} [CO]{1}'.format(sanitized_base_name, cover_path.suffix)
-        linked_files += '#COVER:{0}\n'.format(cover_name)
-        shutil.copy(cover_path, song_folder.joinpath(cover_name))
-
-    if background_path:
-        background_name = '{0} [BG]{1}'.format(sanitized_base_name, background_path.suffix)
-        linked_files += '#BACKGROUND:{0}\n'.format(background_name)
-        shutil.copy(background_path, song_folder.joinpath(background_name))
-
-    if bg_video_path:
-        bg_video_name = '{0}{1}'.format(sanitized_base_name, bg_video_path.suffix)
-        linked_files += '#VIDEO:{0}\n'.format(bg_video_name)
-        shutil.copy(bg_video_path, song_folder.joinpath(bg_video_name))
-
-    # Produce song data section of the ultrastar file.
-    song_data = '#BPM:{0}\n#GAP:0\n'.format(beats_per_minute)
-
-    # Combine ultrastar file components
-    ultrastar_file = metadata + linked_files + song_data + notes_section + 'E\n'
-
-    # Write file
-    ultrastar_file_path = song_folder.joinpath('{0}.txt'.format(sanitized_base_name))
-    with open(ultrastar_file_path, 'w', encoding='utf-8') as f:
-        f.write(ultrastar_file)
-
-    # Delete downloads
-    shutil.rmtree(tmp_data)
-
-    log('\033[0;32mSuccess:\033[0m The ultrastar project has been placed in the output folder!')
-    log('\033[1;33mThe song should be checked manually for any mistakes\033[0m')
+                # Find any lines that overlap with the current one.
+                for j in range(i + 1, len(lines)):
+                    selected_line = lines[j]
+                    selected_line_start_beat = ceil(selected_line.start.total_seconds() * BEATS_PER_SECOND)
+                    if selected_line_start_beat < current_line_end_beat:
+                        overlap_group.append(selected_line)
 
 
-def init_argument_parser() -> ArgumentParser:
-    '''Function to setup the command line argument parser.
+                if len(overlap_group) > 1:
+                    overlap_found = True
+                    # The user must select one of the overlapping lines to keep.
+                    selection_window = OverlapSelectionWindow(overlap_group)
+                    selection_window.exec()
 
-    Adds the following arguments:
-        * `url`           The kara.moe URL for the song.
-        * `-co`           Path to the cover image for the song.
-        * `-bg`           Path to the background image for the song.
-        * `-bv`           Path to the background video for the song.
-        * `-l`            Specifies the language the song is in.
-        * `-c`            Specifies the creator of the map (appends to the creator of the kara map).
-        * `tv`            If set then (TV) is appended to the song title.
+                    remove_line = selection_window.selected_line
+                    break
 
-    Returns:
-        ArgumentParser: The command line parser for this program.
-    '''
+            if remove_line:
+                lines.remove(remove_line)
 
-    parser = ArgumentParser()
+        return lines
 
-    parser.add_argument(
-        'url',
-        help='The kara.moe URL for the song.',
-        type=str
-    )
-    parser.add_argument(
-        '-co',
-        '--cover',
-        help='The path to the cover image for the song.',
-        type=str
-    )
-    parser.add_argument(
-        '-bg',
-        '--background',
-        help='The path to the background image for the song.',
-        type=str
-    )
-    parser.add_argument(
-        '-bv',
-        '--background_video',
-        help='The path to the background video for the song.',
-        type=str
-    )
-    parser.add_argument(
-        '-c',
-        '--creator',
-        help='The creator of this map (appends to the creator of the kara map).',
-        type=str
-    )
-    parser.add_argument(
-        '-tv',
-        help='Pass this flag if the song is TV sized, it will edit the song title to include (TV).',
-        action='store_true'
-    )
+    def build_note_section(self, sub_file: Path) -> str:
+        """Produces the notes section of the Ultrastar song from the subtitle lines.
 
-    parser.set_defaults(tv=False)
+        Args:
+            sub_file (Path): The path to the subtitle file.
 
-    return parser
+        Returns:
+            str: The note section of the Ultrastar song.
+        """
 
+        note_section = ''
 
-def check_arg_paths(args: Namespace) -> bool:
-    """Function to check if all the specified paths are valid.
+        # Get subtitle data
+        lines = self.get_sub_lines(sub_file)
 
-    Does not check that files are actually valid, only checks the file extension.
+        # Filter Comment to remove overlapping lines.
+        filtered_lines = self.filter_overlaping_lines(lines)
 
-    Args:
-        args (Namespace): The command line arguments.
+        # Produce Ultrastar notes.
+        for line in filtered_lines:
+            # Get the starting beat for this line.
+            current_beat = round(line.start.total_seconds() * BEATS_PER_SECOND)
 
-    Returns:
-        bool: True if all the paths are valid, else False.
-    """
+            # Get all syllable/timing pairs from the line.
+            syllables: List[Tuple[int, Optional[str]]] = []
+            for sound_pair, timing_pair in re.findall(TIMING_REGEX, line.text):
+                if sound_pair:
+                    timing, sound = sound_pair.split('}')
+                elif timing_pair:
+                    timing = timing_pair.split('\\')[1]
+                    sound = None
+                else:
+                    warning_text = 'Found something unexpected in line: \"{}\"'.format(clean_line_text(line))
+                    self.display_message(self.LVL_WARNING, warning_text)
+                    continue
 
-    if args.cover and not Path(args.cover).exists():
-        log('\033[0;31mError:\033[0m The specified cover image file can not be found!')
-        return False
-    elif args.cover:
-        if Path(args.cover).suffix in ['jpg', 'jpeg', 'png']:
-            log('\033[0;31mError:\033[0m The specified cover image is not an image!')
+                timing = re.sub(r'[^0-9.]', '', timing)
+                syllables.append((round(float(timing)), sound))
+
+            # Write out line for the Ultrastar format
+            for duration, sound in syllables:
+                # Timing pairs without sound simply increment the current beat counter.
+                if not sound:
+                    current_beat += duration
+                    continue
+
+                # Subtitle files will provide the duration of a note in centiseconds, this needs to be converted into
+                # beats for the Ultrastar format.
+                converted_duration = round((duration / 100) * BEATS_PER_SECOND)
+
+                # Notes should be slightly shorter than their original duration, to make it easier to sing.
+                # Currently this is done by simply reducing the duration by one. This could use improvement.
+                tweaked_duration = converted_duration - 1 if converted_duration > 1 else converted_duration
+
+                # Write note line
+                note_section += NOTE_LINE.format(
+                    start=current_beat,
+                    duration=tweaked_duration,
+                    pitch=DEFAULT_PITCH,
+                    sound=sound
+                )
+
+                # Increment current beat by the non-tweaked duration.
+                current_beat += converted_duration
+
+            # Write end of line separator.
+            note_section += SEP_LINE.format(current_beat)
+
+        return note_section
+
+    def check_parameters(self) -> bool:
+        # Check the kara.moe url is valid.
+        if not re.match(KARA_URL_REGEX, self.kara_url_input.text()):
+            self.display_message(self.LVL_ERROR, 'Provided Kara.moe url is invalid.')
             return False
 
-    if args.background and not Path(args.background).exists():
-        log('\033[0;31mError:\033[0m The specified background image file can not be found!')
-        return False
-    elif args.cover:
-        if Path(args.background).suffix in ['jpg', 'jpeg', 'png']:
-            log('\033[0;31mError:\033[0m The specified background image is not an image!')
+        # Check cover image.
+        if self.cover_input.text():
+            cover_path = Path(self.cover_input.text())
+
+            if not cover_path.exists():
+                self.display_message(self.LVL_ERROR, 'The specified cover image file can not be found!')
+                return False
+            elif cover_path.suffix not in ['.jpg', '.jpeg', '.png']:
+                self.display_message(self.LVL_ERROR, 'The specified cover image is not an image!')
+                return False
+        else:
+            self.display_message(self.LVL_ERROR, 'Please specify a cover image!')
             return False
 
-    if args.background_video and not Path(args.background_video).exists():
-        log('\033[0;31mError:\033[0m The specified background videofile can not be found!')
-        return False
-    elif args.background_video:
-        if Path(args.background_video).suffix != '.mp4':
-            log(Path(args.background).suffix)
-            log('\033[0;31mError:\033[0m The specified background video is not a mp4!')
-            return False
+        # Check background image.
+        if self.bg_input.text():
+            bg_path = Path(self.bg_input.text())
 
-    return True
+            if not bg_path.exists():
+                self.display_message(self.LVL_ERROR, 'The specified background image file can not be found!')
+                return False
+            elif bg_path.suffix not in ['.jpg', '.jpeg', '.png']:
+                self.display_message(self.LVL_ERROR, 'The specified background image is not an image!')
+                return False
 
+        # Check background video.
+        if self.bgv_input.text():
+            bgv_path = Path(self.bgv_input.text())
 
-def check_arg_url(args: Namespace) -> bool:
-    if re.match(KARA_URL_REGEX, args.url):
+            if not bgv_path.exists():
+                self.display_message(self.LVL_ERROR, 'The specified background video file can not be found!')
+                return False
+            elif bgv_path.suffix != '.mp4':
+                self.display_message(self.LVL_ERROR, 'The specified background video is not a video!')
+                return False
+
         return True
-    else:
-        log('\033[0;31mError:\033[0m Provided URL is not in the correct format!')
-        return False
 
+    def run(self) -> None:
+        """Produces the Ultrastar map from the provided data."""
 
-def gui_entry_point(url: str, cover: str, background: str, video:str, creator: str, tv: bool) -> None:
-    """Function that serves as an entry-point for the GUI to use this file.
+        # Check all the parameters are valid.
+        if not self.check_parameters():
+            return
 
-    Args:
-        Correspond to the respective command line arguments.
-    """
+        # Get data from the input
+        kara_url = self.kara_url_input.text()
+        cover_file = self.cover_input.text()
+        bg_file = self.bg_input.text()
+        bgv_file = self.bgv_input.text()
+        tv_size = self.tv_checkbox.isChecked()
+        extra_creator = self.creator_input.text()
 
-    args = Namespace(url=url, cover=cover, background=background, background_video=video, creator=creator, tv=tv)
-    if check_arg_paths(args) and check_arg_url(args):
-        main(args)
+        """"""
+        # --------------------------
+        # Pull data from kara.moe
+        # --------------------------
+
+        # Get kara id from the url.
+        kara_id = kara_url.split('/')[-1]
+
+        # Create/Clear tmp folder for downloading.
+        tmp_data = TMP_FOLDER.joinpath(kara_id)
+        if tmp_data.exists():
+            shutil.rmtree(tmp_data)
+        tmp_data.mkdir(parents=True, exist_ok=False)
+
+        # Download data from kara.
+        self.output_text.setText('Getting data from kara.')
+        kara_data = kapi.get_kara_data(kara_id)
+
+        self.output_text.setText('Downloading subtitles.')
+        kapi.get_sub_file(kara_data['sub_file'], tmp_data)
+
+        self.output_text.setText('Downloading media.')
+        kapi.get_media_file(kara_data['media_file'], tmp_data)
+
+        # --------------------------
+        # Load data
+        # --------------------------
+
+        subtitle_path = Path(tmp_data.joinpath(kara_data['sub_file']))
+        media_path = Path(tmp_data.joinpath(kara_data['media_file']))
+
+        # Convert the media to mp3 if it is a video.
+        if media_path.suffix != '.mp3':
+            self.output_text.setText('Converting media to mp3 using ffmpeg.')
+            audio_path = tmp_data.joinpath('{0}.mp3'.format(media_path.stem))
+            # Convert to mp3 using ffmpeg
+            ret_val = subprocess.call([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
+
+            if ret_val:
+                self.display_message(self.LVL_ERROR, 'Could not convert media to mp3!')
+                return
+
+            if not bgv_file:
+                bgv_file = media_path
+        else:
+            audio_path = media_path
+
+        cover_path = Path(cover_file) if cover_file else None
+        bg_path = Path(bg_file) if bg_file else None
+        bgv_path = Path(bgv_file) if bgv_file else None
+
+        self.output_text.setText('Mapping song.')
+
+        # Create output folder
+        title_string = kara_data['title'] + (' (TV)' if tv_size else '')
+        base_name = '{0} - {1}'.format(kara_data['artists'], title_string)
+        sanitized_base_name = re.sub(VALID_FILENAME_REGEX, '', base_name)
+        song_folder = OUTPUT_FOLDER.joinpath(sanitized_base_name)
+        if song_folder.exists():
+            self.display_message(self.LVL_WARNING, 'Overwriting existing song.')
+            shutil.rmtree(song_folder)
+        song_folder.mkdir(parents=True)
+
+        # --------------------------
+        # Generate song file
+        # --------------------------
+
+        # ---------------
+        # Notes
+        # ---------------
+
+        # Parse subtitle file to get the notes section.
+        notes_section = self.build_note_section(subtitle_path)
+
+        # ---------------
+        # Metadata
+        # ---------------
+
+        metadata = '#TITLE:{0}\n#ARTIST:{1}\n'.format(title_string, kara_data['artists'])
+        metadata += '#LANGUAGE:{0}\n'.format(kara_data['language'])
+
+        creator_string = kara_data['authors'] + ('' if not extra_creator else (' & ' + extra_creator))
+        metadata += '#CREATOR:{0}\n'.format(creator_string)
+
+        # Custom tag not used by Ultrastar is used to mark the song as a KaraLuxer port.
+        metadata += '#KARALUXERVERSION:{0}\n'.format(VERSION)
+
+        # ---------------
+        # Files
+        # ---------------
+
+        # Paths are made relative and files will be renamed to match the base name.
+        mp3_name = '{0}.mp3'.format(sanitized_base_name)
+        linked_files = '#MP3:{0}\n'.format(mp3_name)
+        shutil.copy(audio_path, song_folder.joinpath(mp3_name))
+
+        if cover_path:
+            cover_name = '{0} [CO]{1}'.format(sanitized_base_name, cover_path.suffix)
+            linked_files += '#COVER:{0}\n'.format(cover_name)
+            shutil.copy(cover_path, song_folder.joinpath(cover_name))
+
+        if bg_path:
+            background_name = '{0} [BG]{1}'.format(sanitized_base_name, bg_path.suffix)
+            linked_files += '#BACKGROUND:{0}\n'.format(background_name)
+            shutil.copy(bg_path, song_folder.joinpath(background_name))
+
+        if bgv_path:
+            bg_video_name = '{0}{1}'.format(sanitized_base_name, bgv_path.suffix)
+            linked_files += '#VIDEO:{0}\n'.format(bg_video_name)
+            shutil.copy(bgv_path, song_folder.joinpath(bg_video_name))
+
+        # ---------------
+        # Song data
+        # ---------------
+
+        # Ultrastar requires the BPM opf the song.
+        # This script uses a fixed 'beats per second' to produce timings, the BPM is calculated from the BPS.
+        # The BPM put into the ultrastar file needs to be around 1/4 of the calculated BPM (I'm not sure why).
+        beats_per_minute = (BEATS_PER_SECOND * 60) / 4
+
+        song_data = '#BPM:{0}\n#GAP:0\n'.format(beats_per_minute)
+
+        # ---------------
+        # Write file
+        # ---------------
+
+        # Combine all the components of the file.
+        ultrastar_file = metadata + linked_files + song_data + notes_section + 'E\n'
+
+        # Write the file.
+        ultrastar_file_path = song_folder.joinpath('{0}.txt'.format(sanitized_base_name))
+        with open(ultrastar_file_path, 'w', encoding='utf-8') as f:
+            f.write(ultrastar_file)
+
+        # Clear downloads
+        shutil.rmtree(tmp_data)
+
+        self.output_text.setText('Finished.')
+        self.display_message(self.LVL_INFO, 'Finished mapping the song. Check the output folder.')
 
 
 if __name__ == '__main__':
-    parser = init_argument_parser()
-    args = parser.parse_args()
-    if check_arg_paths(args) and check_arg_url(args):
-        main(args)
+    app = QApplication([])
+    window = KaraLuxer()
+    window.show()
+    sys.exit(app.exec_())
