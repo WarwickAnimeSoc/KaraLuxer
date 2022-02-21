@@ -203,6 +203,11 @@ class KaraLuxer(QDialog):
         optional_args_layout.addWidget(QLabel('TV Sized:'), 3, 0)
         optional_args_layout.addWidget(self.tv_checkbox, 3, 1)
         optional_args_layout.addWidget(QLabel('(Will add "(TV)" to the song title)'), 3, 2)
+        
+        self.overlap_checkbox = QCheckBox()
+        optional_args_layout.addWidget(QLabel('Skip overlaps:'), 4, 0)
+        optional_args_layout.addWidget(self.tv_checkbox, 4, 1)
+        optional_args_layout.addWidget(QLabel('([Advanced] For manual overlap handling)'), 4, 2)
 
         self.optional_args_group.setLayout(optional_args_layout)
 
@@ -334,11 +339,12 @@ class KaraLuxer(QDialog):
 
         return lines
 
-    def build_note_section(self, sub_file: Path) -> str:
+    def build_note_section(self, sub_file: Path, skip_overlaps: bool) -> str:
         """Produces the notes section of the Ultrastar song from the subtitle lines.
 
         Args:
             sub_file (Path): The path to the subtitle file.
+            skip_overlaps (bool): If true, skips the call to filter overlapping lines.
 
         Returns:
             str: The note section of the Ultrastar song.
@@ -349,8 +355,8 @@ class KaraLuxer(QDialog):
         # Get subtitle data
         lines = self.get_sub_lines(sub_file)
 
-        # Filter Comment to remove overlapping lines.
-        filtered_lines = self.filter_overlaping_lines(lines)
+        # Filter Comment to remove overlapping lines, but only when skip_overlaps is false
+        filtered_lines = self.filter_overlaping_lines(lines) if not skip_overlaps else lines
 
         # Produce Ultrastar notes.
         for line in filtered_lines:
@@ -461,6 +467,7 @@ class KaraLuxer(QDialog):
         bg_file = self.bg_input.text()
         bgv_file = self.bgv_input.text()
         tv_size = self.tv_checkbox.isChecked()
+        overlap_skip = self.overlap_checkbox.isChecked()
         extra_creator = self.creator_input.text()
 
         """"""
@@ -536,7 +543,7 @@ class KaraLuxer(QDialog):
         # ---------------
 
         # Parse subtitle file to get the notes section.
-        notes_section = self.build_note_section(subtitle_path)
+        notes_section = self.build_note_section(subtitle_path, overlap_skip)
 
         # ---------------
         # Metadata
