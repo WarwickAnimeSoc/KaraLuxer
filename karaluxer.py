@@ -520,6 +520,7 @@ class KaraLuxer(QDialog):
         title_string = kara_data['title'] + (' (TV)' if tv_size else '')
         base_name = '{0} - {1}'.format(kara_data['artists'], title_string)
         sanitized_base_name = re.sub(VALID_FILENAME_REGEX, '', base_name)
+        sanitized_base_name = sanitized_base_name.strip()
         song_folder = OUTPUT_FOLDER.joinpath(sanitized_base_name)
         if song_folder.exists():
             self.display_message(self.LVL_WARNING, 'Overwriting existing song.')

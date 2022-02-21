@@ -22,4 +22,3 @@ Once the script is done it will place the converted song inside the `out` folder
 - UI improvements (Program Output section of the UI doesn't work properly).
 - CLI version (Low Priority).
 - Allow manual overriding of the `.ass` file.
-
