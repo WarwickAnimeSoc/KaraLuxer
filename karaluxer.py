@@ -206,7 +206,7 @@ class KaraLuxer(QDialog):
         
         self.overlap_checkbox = QCheckBox()
         optional_args_layout.addWidget(QLabel('Skip overlaps:'), 4, 0)
-        optional_args_layout.addWidget(self.tv_checkbox, 4, 1)
+        optional_args_layout.addWidget(self.overlap_checkbox, 4, 1)
         optional_args_layout.addWidget(QLabel('([Advanced] For manual overlap handling)'), 4, 2)
 
         self.optional_args_group.setLayout(optional_args_layout)
