@@ -34,8 +34,15 @@ def get_kara_data(kara_id: str) -> Dict[str, str]:
 
     data = json.loads(response.content)
 
+    # Get title in english first, or in the default language if no english title exists
+    try:
+        kara_title = data['titles']['eng']
+    except KeyError:
+        default_lang = data['titles_default_language']
+        kara_title = data['titles'][default_lang]
+
     kara_data = {
-        'title': data['titles']['eng'],
+        'title': kara_title,
         'sub_file': data['subfile'],
         'media_file': data['mediafile'],
         'language': data['langs'][0]['i18n']['eng']
