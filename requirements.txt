@@ -1,4 +1,0 @@
-ass==0.5.2
-requests
-PyQt5
-pyinstaller
