@@ -44,6 +44,7 @@ OUTPUT_FOLDER = Path('./out')  # Directory where processed ultrastar songs are p
 TMP_FOLDER = Path('./tmp')  # Directory where Kara.moe files are downloaded to.
 NOTE_LINE = ': {start} {duration} {pitch} {sound}\n'  # Ultrastar format standard sung line.
 SEP_LINE = '- {}\n'  # Ultrastar format line seperator.
+PLAYER_LINE = 'P {}\n'  # Ultrastar format for Player.
 
 BEATS_PER_SECOND = 100  # Beats per second for the ultrastar map. Subfiles use centiseconds for timing.
 DEFAULT_PITCH = 19  # Default pitch to set notes to.
@@ -265,42 +266,40 @@ class KaraLuxer(QDialog):
         message_window.setText(message)
         message_window.exec()
 
-    def get_sub_lines(self, sub_file: Path) -> CommentList:
+    def get_sub_lines(self, sub_file: Path) -> Tuple[dict[str,list[Comment]], list[str]]:
         """Gets all the Comment events from a given subtitle file.
 
         Args:
             sub_file (Path): The path to the subtitle file.
 
         Returns:
-            List[ass.Comment]: A list containing all the Comment events from the subtitle file, ordered by their starting
-                                time.
+            Tuple
+                Dict[string,List[ass.Comment]]: A dictionary containing keyvaluepairs of styles and all the Comment events from the subtitle file, ordered by their starting time.
+                list[str]: A list of unique styles.
         """
 
         with open(sub_file, 'r', encoding='utf-8-sig') as f:
             sub_data = ass.parse(f)
 
-        # Filter out comment lines.
-        line_list = [event for event in sub_data.events if isinstance(event, Comment)]
+        line_list_per_style = {}
+        unique_styles_in_text = set(self.uniqueStyles(sub_data.events))
+        unique_styles_in_styles = set(o.name for o in sub_data.styles)
+        unique_styles = list(set(unique_styles_in_text).intersection(unique_styles_in_styles))
+        for style in unique_styles:
+            all_items = list(filter(lambda event: event.style == style, sub_data.events))
+            all_items.sort(key=lambda line: line.start)
+            line_list_per_style[style] = all_items
 
-        # In the special case where comments are not used:
-        # e.g https://kara.moe/kara/rock-over-japan/68a57800-9b23-4c62-bcc8-a77fb103b798
-        # The Dialogue is used.
-        if not line_list:
-            line_list = [event for event in sub_data.events if isinstance(event, Dialogue)]
+        return line_list_per_style, unique_styles
 
-        # Sort lines to be in order of their starting time.
-        line_list.sort(key=lambda line: line.start)
-
-        return line_list
-
-    def filter_overlaping_lines(self, lines: CommentList) -> CommentList:
+    def filter_overlaping_lines(self, lines: list[Comment]) -> dict[str,List[Comment]]:
         """Filters the Comment events to remove any overlapping lines.
 
         Args:
-            lines (CommentList): The list of all Comment events in the subtitle file.
+            lines (list[Comment]): The list of all Comment events in the subtitle file in the same style.
 
         Returns:
-            CommentList: A filtered list of non-overlapping Comment events.
+            dict[str,list[Comment]]: A filtered list of non-overlapping Comment events within a dictionary.
         """
 
         overlap_found = True
@@ -337,7 +336,30 @@ class KaraLuxer(QDialog):
             if remove_line:
                 lines.remove(remove_line)
 
-        return lines
+        return { 
+            current_line.style : lines
+        }
+
+    def uniqueStyles(self, theList: list[Comment]) -> list[str]:
+        """Produces a list of unique styles found from the subtitle lines.
+
+        Args:
+            theList (list[Comment])
+
+        Returns:
+            List[str]: A unique list of styles.
+        """
+
+        # initialize a null list
+        unique_list = []
+    
+        # traverse for all elements
+        for x in theList:
+            # check if exists in unique_list or not
+            if x.style not in unique_list:
+                unique_list.append(x.style)
+
+        return unique_list
 
     def build_note_section(self, sub_file: Path, skip_overlaps: bool) -> str:
         """Produces the notes section of the Ultrastar song from the subtitle lines.
@@ -353,60 +375,70 @@ class KaraLuxer(QDialog):
         note_section = ''
 
         # Get subtitle data
-        lines = self.get_sub_lines(sub_file)
+        lines, players = self.get_sub_lines(sub_file)
 
-        # Filter Comment to remove overlapping lines, but only when skip_overlaps is false
-        filtered_lines = self.filter_overlaping_lines(lines) if not skip_overlaps else lines
+        # Determine if we're dealing with a duet song or not.
+        if len(players) > 1 and len(players) <= 3:
+            # do not skip overlaps
+            filtered_lines = lines
+        else:
+            # Filter Comment to remove overlapping lines, but only when skip_overlaps is false
+            filtered_lines = self.filter_overlaping_lines(list(lines.items())[0][1]) if not skip_overlaps else lines
 
         # Produce Ultrastar notes.
-        for line in filtered_lines:
-            # Get the starting beat for this line.
-            current_beat = round(line.start.total_seconds() * BEATS_PER_SECOND)
+        counter = 0
+        for _,line_list in filtered_lines.items():
+            if len(filtered_lines.items()) > 1 and counter <= 3:
+                note_section += PLAYER_LINE.format(counter + 1)
+                counter += 1
+            for line in line_list:
+                # Get the starting beat for this line.
+                current_beat = round(line.start.total_seconds() * BEATS_PER_SECOND)
 
-            # Get all syllable/timing pairs from the line.
-            syllables: List[Tuple[int, Optional[str]]] = []
-            for sound_pair, timing_pair in re.findall(TIMING_REGEX, line.text):
-                if sound_pair:
-                    timing, sound = sound_pair.split('}')
-                elif timing_pair:
-                    timing = timing_pair.split('\\')[1]
-                    sound = None
-                else:
-                    warning_text = 'Found something unexpected in line: \"{}\"'.format(clean_line_text(line))
-                    self.display_message(self.LVL_WARNING, warning_text)
-                    continue
+                # Get all syllable/timing pairs from the line.
+                syllables: List[Tuple[int, Optional[str]]] = []
+                for sound_pair, timing_pair in re.findall(TIMING_REGEX, line.text):
+                    if sound_pair:
+                        timing, sound = sound_pair.split('}')
+                    elif timing_pair:
+                        timing = timing_pair.split('\\')[1]
+                        sound = None
+                    else:
+                        warning_text = 'Found something unexpected in line: \"{}\"'.format(clean_line_text(line))
+                        self.display_message(self.LVL_WARNING, warning_text)
+                        continue
 
-                timing = re.sub(r'[^0-9.]', '', timing)
-                syllables.append((round(float(timing)), sound))
+                    timing = re.sub(r'[^0-9.]', '', timing)
+                    syllables.append((round(float(timing)), sound))
 
-            # Write out line for the Ultrastar format
-            for duration, sound in syllables:
-                # Timing pairs without sound simply increment the current beat counter.
-                if not sound:
-                    current_beat += duration
-                    continue
+                # Write out line for the Ultrastar format
+                for duration, sound in syllables:
+                    # Timing pairs without sound simply increment the current beat counter.
+                    if not sound:
+                        current_beat += duration
+                        continue
 
-                # Subtitle files will provide the duration of a note in centiseconds, this needs to be converted into
-                # beats for the Ultrastar format.
-                converted_duration = round((duration / 100) * BEATS_PER_SECOND)
+                    # Subtitle files will provide the duration of a note in centiseconds, this needs to be converted into
+                    # beats for the Ultrastar format.
+                    converted_duration = round((duration / 100) * BEATS_PER_SECOND)
 
-                # Notes should be slightly shorter than their original duration, to make it easier to sing.
-                # Currently this is done by simply reducing the duration by one. This could use improvement.
-                tweaked_duration = converted_duration - 1 if converted_duration > 1 else converted_duration
+                    # Notes should be slightly shorter than their original duration, to make it easier to sing.
+                    # Currently this is done by simply reducing the duration by one. This could use improvement.
+                    tweaked_duration = converted_duration - 1 if converted_duration > 1 else converted_duration
 
-                # Write note line
-                note_section += NOTE_LINE.format(
-                    start=current_beat,
-                    duration=tweaked_duration,
-                    pitch=DEFAULT_PITCH,
-                    sound=sound
-                )
+                    # Write note line
+                    note_section += NOTE_LINE.format(
+                        start=current_beat,
+                        duration=tweaked_duration,
+                        pitch=DEFAULT_PITCH,
+                        sound=sound
+                    )
 
-                # Increment current beat by the non-tweaked duration.
-                current_beat += converted_duration
+                    # Increment current beat by the non-tweaked duration.
+                    current_beat += converted_duration
 
-            # Write end of line separator.
-            note_section += SEP_LINE.format(current_beat)
+                # Write end of line separator.
+                note_section += SEP_LINE.format(current_beat)
 
         return note_section
 
