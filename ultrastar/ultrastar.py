@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 
 class NoteLine():
@@ -60,7 +60,7 @@ class UltrastarSong():
 
         self.meta_lines = {}
 
-        self.note_lines: List[NoteLine] = []
+        self.note_lines: Dict[str, List[NoteLine]] = {'P1': [], 'P2': []}
 
     def add_metadata(self, tag: str, value: str) -> None:
         """Adds a metadata tag to the ultrastar file, will overwrite previous values.
@@ -80,7 +80,8 @@ class UltrastarSong():
         start_beat: int,
         duration: Optional[int] = None,
         pitch: Optional[int] = None,
-        text: Optional[str] = None
+        text: Optional[str] = None,
+        player: str = 'P1'
     ) -> None:
         """Adds a note to the ultrastar file.
 
@@ -93,9 +94,11 @@ class UltrastarSong():
             duration (Optional[int], optional): The duration of the note in beats. Defaults to None.
             pitch (Optional[int], optional): The pitch of the note. Defaults to None.
             text (Optional[str], optional): The text to display for the note. Defaults to None.
+            player (str, optional): The player to add the note to (used for duets).
         """
+
         note = NoteLine(type, start_beat, duration, pitch, text)
-        self.note_lines.append(note)
+        self.note_lines[player].append(note)
 
 
     def __str__(self) -> str:
@@ -108,17 +111,27 @@ class UltrastarSong():
         # Metatags are sorted alphabetically by key.
         sorted_metadata = sorted(self.meta_lines.items(), key=lambda i: i[0])
 
-        # Notes are sorted by their start beat.
-        sorted_notes = sorted(self.note_lines, key=lambda n: n.start_beat)
-
         ultrastar_file = ''
 
         for tag, value in sorted_metadata:
             ultrastar_file += '#{0}:{1}\n'.format(tag, value)
 
-        for note in sorted_notes:
-            ultrastar_file += str(note) + '\n'
+        sorted_notes_1 = sorted(self.note_lines['P1'], key=lambda n: n.start_beat)
+        sorted_notes_2 = sorted(self.note_lines['P2'], key=lambda n: n.start_beat)
 
-        ultrastar_file += 'E\n'
+        if sorted_notes_2:
+            # Duet map
+            ultrastar_file += 'P1\n'
+            for note in sorted_notes_1:
+                ultrastar_file += str(note) + '\n'
+            ultrastar_file += 'E\n'
+            ultrastar_file += 'P2\n'
+            for note in sorted_notes_2:
+                ultrastar_file += str(note) + '\n'
+            ultrastar_file += 'E\n'
+        else:
+            for note in sorted_notes_1:
+                ultrastar_file += str(note) + '\n'
+            ultrastar_file += 'E\n'
 
         return ultrastar_file
