@@ -1,11 +1,13 @@
 # Core Karaluxer functionality - CLI interface
 
-from typing import Callable, Optional, List
+from typing import Callable, Dict, Optional, List
 
 from pathlib import Path
 import re
 import warnings
+import json
 
+import requests
 import ass
 import ass.line
 
@@ -213,3 +215,54 @@ class KaraLuxer():
 
             # Write a linebreak at the end of the line.
             self.ultrastar_song.add_note('-', current_beat)
+
+    def _fetch_kara_data(self, kara_id: str) -> Dict[str, str]:
+        """Fetches relevant data about a map using the Kara api.
+
+        Args:
+            kara_id (str): The ID of the kara.
+
+        Returns:
+            Dict[str, str]: Data about the kara that is relevant to the conversion process.
+        """
+
+        response = requests.get('https://kara.moe/api/karas/' + kara_id)
+        if response.status_code != 200:
+            raise ValueError('Unexpected response from kara.')
+
+        data = json.loads(response.content)
+
+        kara_data = {
+            'title': data['titles'][data['titles_default_language']],
+            'sub_file': data['subfile'],
+            'media_file': data['mediafile'],
+            'language': data['langs'][0]['i18n']['eng']
+        }
+
+        # Get song artists
+        artists = ''
+        for singer in data['singers']:
+            artists += singer['name'] + ' & '
+        kara_data['artists'] = artists[:-3]
+
+        # Get map authors
+        authors = ''
+        for author in data['authors']:
+            authors += author['name'] + ' & '
+        kara_data['authors'] = authors[:-3]
+
+        return kara_data
+
+    def _fetch_kara_file(self, filename: str, download_directory: Path) -> None:
+        file_path = Path(filename)
+
+        if file_path.suffix == '.ass':
+            response = requests.get('https://kara.moe/downloads/lyrics/' + filename)
+        else:
+            response = requests.get('https://kara.moe/downloads/medias/' + filename)
+
+        if response.status_code != 200:
+            raise ValueError('Unexpected response from kara.')
+
+        with open(download_directory.joinpath(filename), 'wb') as f:
+            f.write(response.content)
