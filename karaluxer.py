@@ -4,6 +4,7 @@ from typing import Callable, Optional, List
 
 from pathlib import Path
 import re
+import warnings
 
 import ass
 import ass.line
@@ -15,6 +16,11 @@ from ultrastar.ultrastar import UltrastarSong
 # Using a fixed BPM, and a high one (6000 BPM) makes manual editing of the files produced by KaraLuxer harder.
 KARALUXER_BPS = 100
 
+# Regular expression to capture the timing/syllables from a line by stripping out the karaoke tags.
+SYLLABLE_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9.]+\}[a-zA-Z _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})')
+
+# THe default pitch to assign to notes.
+DEFAULT_PITCH = 19
 
 class KaraLuxer():
     """A KaraLuxer instance. Processes one song."""
@@ -160,3 +166,50 @@ class KaraLuxer():
                     break
 
         return lines
+
+    def _convert_lines(self, lines: List[ass.line._Event]) -> None:
+        """Convert the subtitle lines to notes for the ultrastar song.
+
+        Args:
+            lines (List[ass.line._Event]): The subtitle lines to parse.
+        """
+
+        for line in lines:
+            current_beat = round(line.start.total_seconds() * KARALUXER_BPS)
+
+            # Get all syllables and their durations from the line.
+            syllables = []
+            for sound_pair, timing_pair in re.findall(SYLLABLE_REGEX, line.text):
+                if sound_pair:
+                    timing, syllable_text = sound_pair.split('}')
+                elif timing_pair:
+                    timing = timing_pair.split('\\')[1]
+                    syllable_text = None
+                else:
+                    clean_line = re.sub(r'\{(.*?)\}', '', line.text)
+                    warnings.warn('Found something unexpected in line: "{0}"'.format(clean_line))
+                    continue
+
+                timing = re.sub(r'[^0-9.]', '', timing)
+                syllables.append((round(float(timing)), syllable_text))
+
+            for duration, syllable_text in syllables:
+                # Subtitle files will provide the duration of a note in centiseconds, this needs to be converted into
+                # beats for the Ultrastar format.
+                converted_duration = round((duration / 100) * KARALUXER_BPS)
+
+                # Karaoke subtitles can have timings without a corresponding sound, these simply increment the beat.
+                if not syllable_text:
+                    current_beat += converted_duration
+                    continue
+
+                # Notes should be slightly shorter than their original duration, to make it easier to sing.
+                # Currently this is done by simply reducing the duration by one. This could use improvement.
+                tweaked_duration = converted_duration - 1 if converted_duration > 1 else converted_duration
+
+                self.ultrastar_song.add_note(':', current_beat, tweaked_duration, DEFAULT_PITCH, syllable_text)
+
+                current_beat += converted_duration
+
+            # Write a linebreak at the end of the line.
+            self.ultrastar_song.add_note('-', current_beat)
