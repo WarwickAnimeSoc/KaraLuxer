@@ -27,7 +27,7 @@ CommentList = List[_Event]
 # ----------------------------
 
 # Regex to extract timing information from a line.
-TIMING_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9.]+\}[a-zA-Z _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})')
+TIMING_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9.]+\}[A-zÀ-ÿ _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})')
 
 # Regex to check a kara.moe url is valid.
 KARA_URL_REGEX = re.compile(r'https:\/\/kara\.moe\/kara\/[\w-]+\/[\w-]+')
@@ -288,7 +288,12 @@ class KaraLuxer(QDialog):
         for style in unique_styles:
             all_items = list(filter(lambda event: event.style == style, sub_data.events))
             all_items.sort(key=lambda line: line.start)
-            line_list_per_style[style] = all_items
+            line_list_per_style[style] = [event for event in all_items if isinstance(event, Comment)]
+            # In the special case where comments are not used:
+            # e.g https://kara.moe/kara/rock-over-japan/68a57800-9b23-4c62-bcc8-a77fb103b798
+            # The Dialogue is used.
+            if not line_list_per_style[style]:
+                line_list_per_style[style] = [event for event in all_items if isinstance(event, Dialogue)]
 
         return line_list_per_style, unique_styles
 
