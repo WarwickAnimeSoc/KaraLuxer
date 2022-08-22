@@ -27,7 +27,7 @@ CommentList = List[_Event]
 # ----------------------------
 
 # Regex to extract timing information from a line.
-TIMING_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9.]+\}[a-zA-Z _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})')
+TIMING_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9.]+\}[A-zÀ-ÿ _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})')
 
 # Regex to check a kara.moe url is valid.
 KARA_URL_REGEX = re.compile(r'https:\/\/kara\.moe\/kara\/[\w-]+\/[\w-]+')
