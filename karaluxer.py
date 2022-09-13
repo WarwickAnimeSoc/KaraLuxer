@@ -10,6 +10,7 @@ import subprocess
 import re
 import warnings
 import json
+import argparse
 
 import requests
 import ass
@@ -17,8 +18,14 @@ import ass.line
 
 from ultrastar.ultrastar import UltrastarSong
 
-# FFMPEG is used for converting Kara.moe media files to mp3.
-FFMPEG_PATH = Path(getattr(sys, '_MEIPASS'), 'ffmpeg.exe') if getattr(sys, '_MEIPASS', False) else 'ffmpeg.exe'
+# FFMPEG is used for converting Kara.moe media files to mp3. The script will first check if FFMPEG has been bundled with
+# it (through pyinstaller), secondly it will look for it in the "tools" folder and finally assume it is on PATH.
+if getattr(sys, '_MEIPASS', False):
+    FFMPEG_PATH = Path(getattr(sys, '_MEIPASS'), 'ffmpeg.exe')
+elif Path('tools', 'ffmpeg.exe').exists():
+    FFMPEG_PATH = Path('tools', 'ffmpeg.exe')
+else:
+    FFMPEG_PATH = 'ffmpeg'
 
 # Rather than estimate the BPM of each song, KaraLuxer uses a fixed BPM (specified here in Beats Per Second). Subtitle
 # files for karaoke specify timings in centiseconds, therefore to avoid rounding KaraLuxer uses 100 beats per second.
@@ -26,7 +33,7 @@ FFMPEG_PATH = Path(getattr(sys, '_MEIPASS'), 'ffmpeg.exe') if getattr(sys, '_MEI
 KARALUXER_BPS = 100
 
 # Regular expression to capture the timing/syllables from a line by stripping out the karaoke tags.
-SYLLABLE_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9.]+\}[a-zA-Z _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})')
+SYLLABLE_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9.]+\}[A-zÀ-ÿ _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})')
 
 # THe default pitch to assign to notes.
 DEFAULT_PITCH = 19
@@ -119,10 +126,10 @@ class KaraLuxer():
             List[ass.line._Event]: A list of all the lines in the subtitle file, sorted by their stating time.
         """
 
-        if not self.files['subtitle']:
+        if not self.files['subtitles']:
             raise ValueError('Subtitle file has not been provided.')
 
-        with open(self.files['subtitle'], encoding='utf-8-sig') as f:
+        with open(self.files['subtitles'], encoding='utf-8-sig') as f:
             subtitle_data = ass.parse(f)
 
         # Using Comment lines instead of dialogue from Kara produces better results. However some songs, such as
@@ -320,8 +327,8 @@ class KaraLuxer():
                 self.files['subtitles'] = download_directory.joinpath(kara_data['sub_file'])
 
             if not self.files['audio']:
-                self._fetch_kara_file(kara_data['media'], download_directory)
-                media_path = download_directory.joinpath(kara_data['media'])
+                self._fetch_kara_file(kara_data['media_file'], download_directory)
+                media_path = download_directory.joinpath(kara_data['media_file'])
 
                 # Some songs on Kara have an mp3 as the media file. In the case where the media is not in mp3 form, it
                 # will be converted to mp3 using ffmpeg.
@@ -339,13 +346,13 @@ class KaraLuxer():
                     self.files['audio'] = audio_path
                 else:
                     self.files['audio'] = media_path
-            else:
-                # Add default meta tags if Kara.moe is not used. These will need to be edited by hand in the produced
-                # text file.
-                self.ultrastar_song.add_metadata('TITLE', 'Song Title')
-                self.ultrastar_song.add_metadata('ARTIST', 'Song Artist')
-                self.ultrastar_song.add_metadata('CREATOR', 'Map Creator')
-                self.ultrastar_song.add_metadata('LANGUAGE', 'Map Creator')
+        else:
+            # Add default meta tags if Kara.moe is not used. These will need to be edited by hand in the produced
+            # text file.
+            self.ultrastar_song.add_metadata('TITLE', 'Song Title')
+            self.ultrastar_song.add_metadata('ARTIST', 'Song Artist')
+            self.ultrastar_song.add_metadata('CREATOR', 'Map Creator')
+            self.ultrastar_song.add_metadata('LANGUAGE', 'Map Creator')
 
         # This tag is not recognized or used by any karaoke programs, it is added by Karaluxer to help identify which
         # maps have been produced using this script.
@@ -366,13 +373,18 @@ class KaraLuxer():
 
         self._convert_lines(subtitle_lines)
 
-        song_folder_name = self.ultrastar_song.meta_lines['ARTIST'] + ' ' + self.ultrastar_song.meta_lines['TITLE']
+        song_folder_name = self.ultrastar_song.meta_lines['ARTIST'] + ' - ' + self.ultrastar_song.meta_lines['TITLE']
         song_folder_name = re.sub(r'[^\w\-.() ]+', '', song_folder_name)
         song_folder_name = song_folder_name.strip()
 
         output_folder = Path('out')
         song_folder = output_folder.joinpath(song_folder_name)
         song_folder.mkdir(parents=True)
+
+        if self.files['audio']:
+            cover_name = song_folder_name + self.files['audio'].suffix
+            self.ultrastar_song.add_metadata('MP3', cover_name)
+            shutil.copy(self.files['audio'], song_folder.joinpath(cover_name))
 
         if self.files['background_image']:
             cover_name = song_folder_name + self.files['background_image'].suffix
@@ -395,3 +407,59 @@ class KaraLuxer():
 
         if self.kara_url:
             shutil.rmtree(download_directory)
+
+
+def main() -> None:
+    """Command Line Interface for Karaluxer."""
+
+    argument_parser = argparse.ArgumentParser()
+    argument_parser.add_argument('-k', '--kara_url', type=str, help='The Kara.moe url to use.')
+    argument_parser.add_argument('-s', '--sub_file', type=str, help='The subtitle file to use.')
+    argument_parser.add_argument('-c', '--cover', type=str, help='The cover image for the song.')
+    argument_parser.add_argument('-bg', '--background', type=str, help='The background image for the song.')
+    argument_parser.add_argument('-bv', '--video', type=str, help='The video file for the song.')
+    argument_parser.add_argument('-a', '--audio', type=str, help='The audio file for the song.')
+    argument_parser.add_argument('-io', '--ignore_overlaps', action='store_true', help='Ignore overlapping lines.')
+    argument_parser.add_argument('-fd', '--force_dialogue',
+                                 action='store_true', help='Force use of lines marked "Dialogue".')
+    argument_parser.add_argument('-tv', '--tv_sized', action='store_true', help='Mark this song as TV sized.')
+
+    argument_parser.set_defaults(ignore_overlaps=False, force_dialogue=False, tv_sized=False)
+
+    arguments = argument_parser.parse_args()
+
+    karaluxer_instance = KaraLuxer(
+        arguments.kara_url,
+        arguments.sub_file,
+        arguments.cover,
+        arguments.background,
+        arguments.video,
+        arguments.audio,
+        arguments.ignore_overlaps,
+        arguments.force_dialogue,
+        arguments.tv_sized
+    )
+
+    def cli_overlap_decision_function(overlapping_lines: List[ass.line._Event]) -> ass.line._Event:
+        for i in range(0, len(overlapping_lines)):
+            print('{0}.) {1}'.format(i, overlapping_lines[i].text))
+
+        print('Select a line to DISCARD.')
+        while True:
+            try:
+                selection = int(input(':>'))
+            except ValueError:
+                print('Please specify a valid integer.')
+                continue
+
+            if 0 <= selection < len(overlapping_lines):
+                return overlapping_lines[selection]
+            else:
+                print('Please specify a valid integer.')
+                continue
+
+    karaluxer_instance.run(cli_overlap_decision_function)
+
+
+if __name__ == '__main__':
+    main()

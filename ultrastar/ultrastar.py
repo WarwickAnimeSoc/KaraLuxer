@@ -5,7 +5,7 @@ class NoteLine():
 
     def __init__(
         self,
-        type: str,
+        note_type: str,
         start_beat: int,
         duration: Optional[int] = None,
         pitch: Optional[int] = None,
@@ -14,23 +14,22 @@ class NoteLine():
         """Sets up the NoteLine instance.
 
         Args:
-            type (str): The type of note. Usually ":" but can be "*", "-", "R" or "F".
+            note_type (str): The type of note. Usually ":" but can be "*", "-", "R" or "F".
             start_beat (int): The beat on which the note starts.
             duration (Optional[int], optional): The duration of the note in beats. Defaults to None.
             pitch (Optional[int], optional): The pitch of the note. Defaults to None.
             text (Optional[str], optional): The text to display for the note. Defaults to None.
         """
 
-        self.type = type,
-        self.start_beat = start_beat,
-        self.duration = duration,
-        self.pitch = pitch,
+        self.note_type = note_type
+        self.start_beat = start_beat
+        self.duration = duration
+        self.pitch = pitch
         self.text = text
 
         # Separator lines only need the start beat, normal lines require all data.
-        if self.type != '-' and not (duration and pitch and text):
+        if self.note_type != '-' and not (duration and pitch and text):
             raise ValueError('Non "-" (linebreak) type lines require the duration, pitch and text to be specified.')
-
 
     def __str__(self) -> str:
         """Produces a string representation of the note.
@@ -40,10 +39,10 @@ class NoteLine():
                  note is a linebreak.
         """
 
-        if self.type == '-':
-            return '{0} {1}'.format(self.type, self.start_beat)
+        if self.note_type == '-':
+            return '{0} {1}'.format(self.note_type, self.start_beat)
         else:
-            return '{0} {1} {2} {3} {4}'.format(self.type, self.start_beat, self.duration, self.pitch, self.text)
+            return '{0} {1} {2} {3} {4}'.format(self.note_type, self.start_beat, self.duration, self.pitch, self.text)
 
 
 
@@ -76,7 +75,7 @@ class UltrastarSong():
 
     def add_note(
         self,
-        type: str,
+        note_type: str,
         start_beat: int,
         duration: Optional[int] = None,
         pitch: Optional[int] = None,
@@ -89,15 +88,14 @@ class UltrastarSong():
         are written as "- TIME".
 
         Args:
-            type (str): The type of note. Usually ":" but can be "*", "-", "R" or "F".
+            note_type (str): The type of note. Usually ":" but can be "*", "-", "R" or "F".
             start_beat (int): The beat on which the note starts.
             duration (Optional[int], optional): The duration of the note in beats. Defaults to None.
             pitch (Optional[int], optional): The pitch of the note. Defaults to None.
             text (Optional[str], optional): The text to display for the note. Defaults to None.
             player (str, optional): The player to add the note to (used for duets).
         """
-
-        note = NoteLine(type, start_beat, duration, pitch, text)
+        note = NoteLine(note_type, start_beat, duration, pitch, text)
         self.note_lines[player].append(note)
 
 
