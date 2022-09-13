@@ -45,7 +45,6 @@ class NoteLine():
             return '{0} {1} {2} {3} {4}'.format(self.note_type, self.start_beat, self.duration, self.pitch, self.text)
 
 
-
 class UltrastarSong():
 
     def __init__(self, bpm: int) -> None:

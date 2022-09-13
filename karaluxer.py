@@ -56,6 +56,7 @@ class KaraLuxer():
         ignore_overlaps: bool = False,
         force_dialogue_lines: bool = False,
         tv_sized: bool = False,
+        autopitch: bool = False
     ) -> None:
         """Sets up the KaraLuxer instance.
 
@@ -76,6 +77,7 @@ class KaraLuxer():
                 Not recommended unless specifying a manual subtitle file.
             tv_sized (bool, optional): If True will append (TV) to the song title. (This is the convention that
                 ultrastar.es uses).
+            autopitch (bool, optional): If True Karaluxer will attempt to use ultrastar_pitch to pitch the notes.
         """
 
         # One of kara_url or ass_file must be passed to the Karaluxer instance.
@@ -93,6 +95,7 @@ class KaraLuxer():
         self.ignore_overlaps = ignore_overlaps
         self.force_dialogue_lines = force_dialogue_lines
         self.tv_sized = tv_sized
+        self.autopitch = autopitch
 
         # Parameter checks
         if kara_url and not re.match(r'https:\/\/kara\.moe\/kara\/[\w-]+\/[\w-]+', kara_url):
@@ -296,6 +299,28 @@ class KaraLuxer():
         with open(download_directory.joinpath(filename), 'wb') as f:
             f.write(response.content)
 
+    def _autopitch(self, song_folder: Path) -> None:
+        """Pitches the ultrastar file using the ultrastar_pitch utility.
+
+        Args:
+            song_folder (Path): The path to the folder containing all the song files.
+        """
+
+        ultrastar_pitch_path = Path('tools', 'ultrastar_pitch.exe')
+
+        if not ultrastar_pitch_path.exists():
+            raise IOError('Can not find ultrastar_pitch. Place ultastar_pitch.exe in the "tools" folder.')
+
+        notes_file = song_folder.joinpath(song_folder.name + '.txt')
+        pitched_file = song_folder.joinpath('pitched.txt')
+
+        ret_val = subprocess.call(['ultrastar-pitch', str(notes_file), '-o', str(pitched_file)])
+        if ret_val:
+            raise IOError('Could not process song with ultrastar_pitch')
+
+        notes_file.unlink()
+        pitched_file.rename(notes_file)
+
     def run(
         self,
         overlap_decision_function: Optional[Callable[[List[ass.line._Event]], ass.line._Event]] = None
@@ -339,7 +364,6 @@ class KaraLuxer():
                     audio_path = download_directory.joinpath(media_path.stem + '.mp3')
 
                     ret_val = subprocess.call([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
-
                     if ret_val:
                         raise IOError('Could not convert media to mp3 with FFMPEG.')
 
@@ -408,6 +432,9 @@ class KaraLuxer():
         if self.kara_url:
             shutil.rmtree(download_directory)
 
+        if self.autopitch:
+            self._autopitch(song_folder)
+
 
 def main() -> None:
     """Command Line Interface for Karaluxer."""
@@ -423,8 +450,10 @@ def main() -> None:
     argument_parser.add_argument('-fd', '--force_dialogue',
                                  action='store_true', help='Force use of lines marked "Dialogue".')
     argument_parser.add_argument('-tv', '--tv_sized', action='store_true', help='Mark this song as TV sized.')
+    argument_parser.add_argument('-ap', '--autopitch',
+                                 action='store_true', help='Pitch the song using ultrastar_pitch.')
 
-    argument_parser.set_defaults(ignore_overlaps=False, force_dialogue=False, tv_sized=False)
+    argument_parser.set_defaults(ignore_overlaps=False, force_dialogue=False, tv_sized=False, autopitch=False)
 
     arguments = argument_parser.parse_args()
 
@@ -437,7 +466,8 @@ def main() -> None:
         arguments.audio,
         arguments.ignore_overlaps,
         arguments.force_dialogue,
-        arguments.tv_sized
+        arguments.tv_sized,
+        arguments.autopitch
     )
 
     def cli_overlap_decision_function(overlapping_lines: List[ass.line._Event]) -> ass.line._Event:
