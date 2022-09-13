@@ -1,8 +1,12 @@
 # Core Karaluxer functionality - CLI interface
 
+from argparse import ArgumentError
+import shutil
 from typing import Callable, Dict, Optional, List
 
 from pathlib import Path
+import sys
+import subprocess
 import re
 import warnings
 import json
@@ -12,6 +16,9 @@ import ass
 import ass.line
 
 from ultrastar.ultrastar import UltrastarSong
+
+# FFMPEG is used for converting Kara.moe media files to mp3.
+FFMPEG_PATH = Path(getattr(sys, '_MEIPASS'), 'ffmpeg.exe') if getattr(sys, '_MEIPASS', False) else 'ffmpeg.exe'
 
 # Rather than estimate the BPM of each song, KaraLuxer uses a fixed BPM (specified here in Beats Per Second). Subtitle
 # files for karaoke specify timings in centiseconds, therefore to avoid rounding KaraLuxer uses 100 beats per second.
@@ -23,6 +30,10 @@ SYLLABLE_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9.]+\}[a-zA-Z _.\-,!"\']+\s*)
 
 # THe default pitch to assign to notes.
 DEFAULT_PITCH = 19
+
+# Version number used to tag and identify Karaluxer produced maps.
+KARALUXER_VERSION = '3.0.0'
+
 
 class KaraLuxer():
     """A KaraLuxer instance. Processes one song."""
@@ -36,7 +47,8 @@ class KaraLuxer():
         background_v_file: Optional[str] = None,
         audio_file: Optional[str] = None,
         ignore_overlaps: bool = False,
-        force_dialogue_lines: bool = False
+        force_dialogue_lines: bool = False,
+        tv_sized: bool = False,
     ) -> None:
         """Sets up the KaraLuxer instance.
 
@@ -55,6 +67,8 @@ class KaraLuxer():
             ignore_overlaps (bool, optional): If True overlaps will be left in the ultrastar file. Defaults to False.
             force_dialogue_lines (bool, optional): If True only Dialogue lines will be parsed from the subtitle file.
                 Not recommended unless specifying a manual subtitle file.
+            tv_sized (bool, optional): If True will append (TV) to the song title. (This is the convention that
+                ultrastar.es uses).
         """
 
         # One of kara_url or ass_file must be passed to the Karaluxer instance.
@@ -71,6 +85,7 @@ class KaraLuxer():
         }
         self.ignore_overlaps = ignore_overlaps
         self.force_dialogue_lines = force_dialogue_lines
+        self.tv_sized = tv_sized
 
         # Parameter checks
         if kara_url and not re.match(r'https:\/\/kara\.moe\/kara\/[\w-]+\/[\w-]+', kara_url):
@@ -152,7 +167,7 @@ class KaraLuxer():
                 current_line = lines[i]
                 overlap_group = [current_line]
 
-                for j in range (i + 1, len(lines)):
+                for j in range(i + 1, len(lines)):
                     selected_line = lines[j]
                     if current_line.end > selected_line.start:
                         overlap_group.append(selected_line)
@@ -254,6 +269,13 @@ class KaraLuxer():
         return kara_data
 
     def _fetch_kara_file(self, filename: str, download_directory: Path) -> None:
+        """Fetches a file from the Kara servers and places it in the specified directory.
+
+        Args:
+            filename (str): The name of the file to fetch.
+            download_directory (Path): The directory to save the file to.
+        """
+
         file_path = Path(filename)
 
         if file_path.suffix == '.ass':
@@ -266,3 +288,110 @@ class KaraLuxer():
 
         with open(download_directory.joinpath(filename), 'wb') as f:
             f.write(response.content)
+
+    def run(
+        self,
+        overlap_decision_function: Optional[Callable[[List[ass.line._Event]], ass.line._Event]] = None
+    ) -> None:
+        """Runs this Karaluxer instance to produce the ultrastar song.
+
+        Args:
+            overlap_decision_function (Optional[Callable[[List[ass.line._Event]], ass.line._Event]], optional):
+                The decision function to use when selecting overlapping lines. Must be specified if self.ignore_overlaps
+                is False.
+        """
+
+        if self.kara_url:
+            kara_id = self.kara_url.split('/')[-1]
+            kara_data = self._fetch_kara_data(kara_id)
+
+            self.ultrastar_song.add_metadata('TITLE', kara_data['title'] +  (' (TV)' if self.tv_sized else ''))
+            self.ultrastar_song.add_metadata('ARTIST', kara_data['artists'])
+            self.ultrastar_song.add_metadata('CREATOR', kara_data['authors'])
+            self.ultrastar_song.add_metadata('LANGUAGE', kara_data['language'])
+
+            temporary_folder = Path('tmp')
+
+            download_directory = temporary_folder.joinpath(kara_id)
+            download_directory.mkdir(parents=True)
+
+            if not self.files['subtitles']:
+                self._fetch_kara_file(kara_data['sub_file'], download_directory)
+                self.files['subtitles'] = download_directory.joinpath(kara_data['sub_file'])
+
+            if not self.files['audio']:
+                self._fetch_kara_file(kara_data['media'], download_directory)
+                media_path = download_directory.joinpath(kara_data['media'])
+
+                # Some songs on Kara have an mp3 as the media file. In the case where the media is not in mp3 form, it
+                # will be converted to mp3 using ffmpeg.
+                if media_path.suffix != '.mp3':
+                    if not self.files['background_video']:
+                        self.files['background_video'] = media_path
+
+                    audio_path = download_directory.joinpath(media_path.stem + '.mp3')
+
+                    ret_val = subprocess.call([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
+
+                    if ret_val:
+                        raise IOError('Could not convert media to mp3 with FFMPEG.')
+
+                    self.files['audio'] = audio_path
+                else:
+                    self.files['audio'] = media_path
+            else:
+                # Add default meta tags if Kara.moe is not used. These will need to be edited by hand in the produced
+                # text file.
+                self.ultrastar_song.add_metadata('TITLE', 'Song Title')
+                self.ultrastar_song.add_metadata('ARTIST', 'Song Artist')
+                self.ultrastar_song.add_metadata('CREATOR', 'Map Creator')
+                self.ultrastar_song.add_metadata('LANGUAGE', 'Map Creator')
+
+        # This tag is not recognized or used by any karaoke programs, it is added by Karaluxer to help identify which
+        # maps have been produced using this script.
+        self.ultrastar_song.add_metadata('KARALUXERVERSION', KARALUXER_VERSION)
+
+        self.ultrastar_song.add_metadata('GAP', '0')
+
+        # The BPM of the song needs to be 1/4 of the actual BPS used in mapping. I'm not sure why.
+        self.ultrastar_song.add_metadata('BPM', str((KARALUXER_BPS * 60) / 4))
+
+        subtitle_lines = self._load_subtitle_lines()
+
+        if not self.ignore_overlaps:
+            if overlap_decision_function:
+                subtitle_lines = self._filter_overlapping_lines(subtitle_lines, overlap_decision_function)
+            else:
+                raise ValueError('A valid decision function must be passed to filter overlapping lines.')
+
+        self._convert_lines(subtitle_lines)
+
+        song_folder_name = self.ultrastar_song.meta_lines['ARTIST'] + ' ' + self.ultrastar_song.meta_lines['TITLE']
+        song_folder_name = re.sub(r'[^\w\-.() ]+', '', song_folder_name)
+        song_folder_name = song_folder_name.strip()
+
+        output_folder = Path('out')
+        song_folder = output_folder.joinpath(song_folder_name)
+        song_folder.mkdir(parents=True)
+
+        if self.files['background_image']:
+            cover_name = song_folder_name + self.files['background_image'].suffix
+            self.ultrastar_song.add_metadata('COVER', cover_name)
+            shutil.copy(self.files['background_image'], song_folder.joinpath(cover_name))
+
+        if self.files['background_video']:
+            cover_name = song_folder_name + self.files['background_video'].suffix
+            self.ultrastar_song.add_metadata('VIDEO', cover_name)
+            shutil.copy(self.files['background_video'], song_folder.joinpath(cover_name))
+
+        if self.files['cover']:
+            cover_name = song_folder_name + ' [CO]' + self.files['cover'].suffix
+            self.ultrastar_song.add_metadata('COVER', cover_name)
+            shutil.copy(self.files['cover'], song_folder.joinpath(cover_name))
+
+        ultrastar_file = song_folder.joinpath(song_folder_name + '.txt')
+        with open(ultrastar_file, 'w', encoding='utf-8') as f:
+            f.write(str(self.ultrastar_song))
+
+        if self.kara_url:
+            shutil.rmtree(download_directory)
