@@ -1,3 +1,4 @@
 ass==0.5.2
 requests==2.28.1
 ultrastar-pitch==1.0.1
+PyQt5-Qt5==5.15.0

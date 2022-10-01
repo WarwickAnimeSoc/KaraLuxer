@@ -1,6 +1,5 @@
 # Core Karaluxer functionality - CLI interface
 
-from argparse import ArgumentError
 import shutil
 from typing import Callable, Dict, Optional, List
 
@@ -472,7 +471,8 @@ def main() -> None:
 
     def cli_overlap_decision_function(overlapping_lines: List[ass.line._Event]) -> ass.line._Event:
         for i in range(0, len(overlapping_lines)):
-            print('{0}.) {1}'.format(i, overlapping_lines[i].text))
+            clean_line = re.sub(r'\{(.*?)\}', '', str(overlapping_lines[i].text))
+            print('{0}.) {1}'.format(i, clean_line))
 
         print('Select a line to DISCARD.')
         while True:
