@@ -11,21 +11,11 @@ from PyQt5.QtWidgets import (QApplication, QMessageBox, QGridLayout, QGroupBox, 
 import ass
 import ass.line
 
+from karaluxer import KaraLuxer
+
 
 class OverlapSelectionWindow(QDialog):
     """Window used to choose between overlapping lines."""
-
-    def _line_select_callback(self, line_index: int) -> None:
-        """Callback function used by the buttons to set the line to discard and close the window.
-
-        The selected line can then be retrieved from the `selected_line` attribute.
-
-        Args:
-            line_index (int): The index of the line to discard.
-        """
-
-        self.selected_line = line_index
-        self.close()
 
     def __init__(self, overlapping_lines: List[ass.line._Event]) -> None:
         """Constructor for the OverlapSelectionWindow.
@@ -62,31 +52,31 @@ class OverlapSelectionWindow(QDialog):
             line_button.clicked.connect(lambda: self._line_select_callback(i))
             window_layout.addWidget(line_button)
 
+    def _line_select_callback(self, line_index: int) -> None:
+        """Callback function used by the buttons to set the line to discard and close the window.
+
+        The selected line can then be retrieved from the `selected_line` attribute.
+
+        Args:
+            line_index (int): The index of the line to discard.
+        """
+
+        self.selected_line = line_index
+        self.close()
+
 
 class KaraLuxerWindow(QDialog):
     """Main window for the script interface."""
-
-    def _get_file_path(self, target: QLineEdit, filter: str) -> None:
-        """Method to get the path to a file and update a target to hold the filepath.
-
-        Args:
-            target (QLineEdit): The target widget to update.
-            filter (str): The filter to use for the file picker.
-        """
-
-        file_dialogue = QFileDialog()
-        file_dialogue.setFileMode(QFileDialog.ExistingFile)
-        file_dialogue.setNameFilter(filter)
-
-        if file_dialogue.exec_() == QDialog.Accepted:
-            target.setText(file_dialogue.selectedFiles()[0])
 
     def __init__(self) -> None:
         """Constructor for the KaraLuxer window."""
 
         super().__init__()
 
-        self.process_thread = None
+        # Set message severity constants. Used for displaying popup messages.
+        self.LVL_ERROR = 2
+        self.LVL_WARNING = 1
+        self.LVL_INFO = 0
 
         # Window settings and flags
         self.setWindowTitle('KaraLuxer')
@@ -192,7 +182,7 @@ class KaraLuxerWindow(QDialog):
 
         # Run button
         run_button = QPushButton('Run')
-        # run_button.clicked.connect()
+        run_button.clicked.connect(self._run)
 
         # Window layout
         window_layout = QVBoxLayout()
@@ -205,6 +195,107 @@ class KaraLuxerWindow(QDialog):
         window_layout.addStretch(3)
 
         self.setLayout(window_layout)
+
+    def _get_file_path(self, target: QLineEdit, filter: str) -> None:
+        """Method to get the path to a file and update a target to hold the filepath.
+
+        Args:
+            target (QLineEdit): The target widget to update.
+            filter (str): The filter to use for the file picker.
+        """
+
+        file_dialogue = QFileDialog()
+        file_dialogue.setFileMode(QFileDialog.ExistingFile)
+        file_dialogue.setNameFilter(filter)
+
+        if file_dialogue.exec_() == QDialog.Accepted:
+            target.setText(file_dialogue.selectedFiles()[0])
+
+    def _display_message(self, message: str, severity: int) -> None:
+        """Displays a message in a popup window.
+
+        Args:
+            message (str): The message to display.
+            severity (int): The severity of the message.
+        """
+
+        message_window = QMessageBox()
+        if severity == self.LVL_INFO:
+            message_window.setIcon(QMessageBox.Information)
+            message_window.setWindowTitle('Info')
+        elif severity == self.LVL_WARNING:
+            message_window.setIcon(QMessageBox.Warning)
+            message_window.setWindowTitle('Warning')
+        else:
+            message_window.setIcon(QMessageBox.Critical)
+            message_window.setWindowTitle('Error')
+
+        message_window.setText(message)
+        message_window.exec()
+
+    def _overlap_decision(self, overlapping_lines: List[ass.line._Event]) -> ass.line._Event:
+        """Generates a popup window to select between overlapping lines.
+
+        Args:
+            overlapping_lines (List[ass.line._Event]): A set of overlapping lines.
+
+        Returns:
+            ass.line._Event: The line to discard.
+        """
+
+        selection_window = OverlapSelectionWindow(overlapping_lines)
+        selection_window.exec()
+
+        return overlapping_lines[selection_window.selected_line]
+
+    def _run(self) -> None:
+        """Produces and runs the KaraLuxer instance."""
+
+        # Get data from the inputs
+        kara_url = self.kara_url_input.text() if self.kara_url_input.text() else None
+        sub_file = self.sub_file_input.text() if self.sub_file_input.text() else None
+
+        if kara_url and sub_file:
+            self._display_message('Please specify either a subtitle file or kara.moe url, not both.', 2)
+            return
+        elif not (kara_url or sub_file):
+            self._display_message('Please specify a subtitle file or kara.moe url.', 2)
+            return
+
+        cover_file = self.cover_input.text() if self.cover_input.text() else None
+
+        if not cover_file:
+            self._display_message('Please specify a cover image file.', 2)
+            return
+
+        bg_file = self.bg_input.text() if self.bg_input.text() else None
+        bgv_file = self.bgv_input.text() if self.bgv_input.text() else None
+        audio_file = self.audio_input.text() if self.audio_input.text() else None
+        tv_sized = self.tv_checkbox.isChecked()
+
+        ignore_overlaps = self.ignore_overlaps_checkbox.isChecked()
+        force_dialogue = self.force_dialogue_checkbox.isChecked()
+        generate_pitches = self.autopitch_checkbox.isChecked()
+
+        try:
+            karaluxer_instance = KaraLuxer(
+                kara_url,
+                sub_file,
+                cover_file,
+                bg_file,
+                bgv_file,
+                audio_file,
+                ignore_overlaps,
+                force_dialogue,
+                tv_sized,
+                generate_pitches
+            )
+            karaluxer_instance.run(self._overlap_decision)
+        except (ValueError, IOError) as e:
+            self._display_message(str(e), self.LVL_ERROR)
+            return
+
+        self._display_message('Finished. Song folder can be found in the "output" folder.', self.LVL_INFO)
 
 
 if __name__ == '__main__':
