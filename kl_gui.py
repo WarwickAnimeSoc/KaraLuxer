@@ -203,9 +203,13 @@ class KaraLuxerWindow(QDialog):
         self.setLayout(window_layout)
 
     def _indicator_bar_start(self) -> None:
+        """Starts the busy indicator."""
+
         self.indicator_bar.setRange(0, 0)
 
     def _indicator_bar_stop(self) -> None:
+        """Stops the busy indicator."""
+
         self.indicator_bar.setRange(0, 1)
 
     def _get_file_path(self, target: QLineEdit, filter: str) -> None:
