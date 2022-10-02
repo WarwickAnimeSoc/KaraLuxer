@@ -385,6 +385,11 @@ class KaraLuxer():
         # maps have been produced using this script.
         self.ultrastar_song.add_metadata('KARALUXERVERSION', KARALUXER_VERSION)
 
+        # Like the KARALUXERVERSION tag, this tag is not recognized by karaoke programs, it is used to identify the
+        # original source of the map.
+        if self.kara_url:
+            self.ultrastar_song.add_metadata('KARAID', kara_id)
+
         self.ultrastar_song.add_metadata('GAP', '0')
 
         # The BPM of the song needs to be 1/4 of the actual BPS used in mapping. I'm not sure why.
@@ -404,7 +409,7 @@ class KaraLuxer():
         song_folder_name = re.sub(r'[^\w\-.() ]+', '', song_folder_name)
         song_folder_name = song_folder_name.strip()
 
-        output_folder = Path('out')
+        output_folder = Path('output')
         song_folder = output_folder.joinpath(song_folder_name)
         song_folder.mkdir(parents=True)
 
