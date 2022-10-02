@@ -6,7 +6,7 @@ import re
 import sys
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import (QApplication, QMessageBox, QGridLayout, QGroupBox, QLabel, QLineEdit, QPushButton,
-                             QDialog, QFileDialog, QCheckBox, QVBoxLayout)
+                             QDialog, QFileDialog, QCheckBox, QVBoxLayout, QProgressBar)
 
 import ass
 import ass.line
@@ -180,6 +180,11 @@ class KaraLuxerWindow(QDialog):
 
         advanced_args_group.setLayout(advanced_args_layout)
 
+        # Progress indicator
+        self.indicator_bar = QProgressBar()
+        self.indicator_bar.setStyleSheet("QProgressBar::chunk { background-color: #328CC1; }")
+        self.indicator_bar.setTextVisible(False)
+
         # Run button
         run_button = QPushButton('Run')
         run_button.clicked.connect(self._run)
@@ -190,11 +195,18 @@ class KaraLuxerWindow(QDialog):
         window_layout.addWidget(essential_args_group)
         window_layout.addWidget(optional_args_group)
         window_layout.addWidget(advanced_args_group)
+        window_layout.addWidget(self.indicator_bar)
         window_layout.addWidget(run_button)
 
         window_layout.addStretch(3)
 
         self.setLayout(window_layout)
+
+    def _indicator_bar_start(self) -> None:
+        self.indicator_bar.setRange(0, 0)
+
+    def _indicator_bar_stop(self) -> None:
+        self.indicator_bar.setRange(0, 1)
 
     def _get_file_path(self, target: QLineEdit, filter: str) -> None:
         """Method to get the path to a file and update a target to hold the filepath.
@@ -251,21 +263,26 @@ class KaraLuxerWindow(QDialog):
     def _run(self) -> None:
         """Produces and runs the KaraLuxer instance."""
 
+        self._indicator_bar_start()
+
         # Get data from the inputs
         kara_url = self.kara_url_input.text() if self.kara_url_input.text() else None
         sub_file = self.sub_file_input.text() if self.sub_file_input.text() else None
 
         if kara_url and sub_file:
             self._display_message('Please specify either a subtitle file or kara.moe url, not both.', 2)
+            self._indicator_bar_stop()
             return
         elif not (kara_url or sub_file):
             self._display_message('Please specify a subtitle file or kara.moe url.', 2)
+            self._indicator_bar_stop()
             return
 
         cover_file = self.cover_input.text() if self.cover_input.text() else None
 
         if not cover_file:
             self._display_message('Please specify a cover image file.', 2)
+            self._indicator_bar_stop()
             return
 
         bg_file = self.bg_input.text() if self.bg_input.text() else None
@@ -293,9 +310,12 @@ class KaraLuxerWindow(QDialog):
             karaluxer_instance.run(self._overlap_decision)
         except (ValueError, IOError) as e:
             self._display_message(str(e), self.LVL_ERROR)
+            self._indicator_bar_stop()
             return
 
+        self._indicator_bar_stop()
         self._display_message('Finished. Song folder can be found in the "output" folder.', self.LVL_INFO)
+
 
 
 if __name__ == '__main__':
