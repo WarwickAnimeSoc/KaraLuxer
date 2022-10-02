@@ -1,9 +1,10 @@
 # GUI for KaraLuxer
 
-from typing import List
+from typing import List, Callable
 
 import re
 import sys
+from threading import Thread
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import (QApplication, QMessageBox, QGridLayout, QGroupBox, QLabel, QLineEdit, QPushButton,
                              QDialog, QFileDialog, QCheckBox, QVBoxLayout, QProgressBar)
@@ -12,6 +13,66 @@ import ass
 import ass.line
 
 from karaluxer import KaraLuxer
+
+
+class KaraLuxerThread(QtCore.QThread):
+    """Custom Thread for running a KaraLuxer instance. Will raise any exceptions produced by Karaluxer."""
+
+    discard_line_signal = QtCore.pyqtSignal(object)
+
+    def __init__(
+        self,
+        parent: QtCore.QObject,
+        karaluxer_instance: KaraLuxer
+    ) -> None:
+        """Constructor for the Karaluxer Thread.
+
+        Args:
+            karaluxer_instance (KaraLuxer): The KaraLuxer instance to execute.
+            overlap_function (Callable[[List[ass.line._Event]], ass.line._Event]): The function used to handle deciding
+                between overlapping lines.
+        """
+        super().__init__(parent)
+
+        self.karaluxer_instance = karaluxer_instance
+
+        self.discard_line_signal.connect(self._on_line_discard)
+
+        self.selected_line = None
+        self.raised_exception = None
+
+    def _on_line_discard(self, discarded_line: ass.line._Event) -> None:
+        """Slot used to set the selected line from the GUI thread."""
+
+        self.selected_line = discarded_line
+
+    def _overlap_decision(self, overlapping_lines: List[ass.line._Event]) -> ass.line._Event:
+        """Generates a popup window to select between overlapping lines.
+
+        Args:
+            overlapping_lines (List[ass.line._Event]): A set of overlapping lines.
+
+        Returns:
+            ass.line._Event: The line to discard.
+        """
+
+        self.parent().overlap_window_signal.emit(overlapping_lines)
+
+        while (not self.selected_line):
+            pass
+
+        discard_line = self.selected_line
+        self.selected_line = None
+
+        return discard_line
+
+    def run(self) -> None:
+        """Executes the KaraLuxer instance."""
+
+        try:
+            self.karaluxer_instance.run(self._overlap_decision)
+        except (ValueError, IOError) as e:
+            self.raised_exception = e
 
 
 class OverlapSelectionWindow(QDialog):
@@ -68,6 +129,8 @@ class OverlapSelectionWindow(QDialog):
 class KaraLuxerWindow(QDialog):
     """Main window for the script interface."""
 
+    overlap_window_signal = QtCore.pyqtSignal(object)
+
     def __init__(self) -> None:
         """Constructor for the KaraLuxer window."""
 
@@ -77,6 +140,10 @@ class KaraLuxerWindow(QDialog):
         self.LVL_ERROR = 2
         self.LVL_WARNING = 1
         self.LVL_INFO = 0
+
+        # Thread for running KaraLuxer.
+        self.karaluxer_thread = None
+        self.overlap_window_signal.connect(self._overlap_decision)
 
         # Window settings and flags
         self.setWindowTitle('KaraLuxer')
@@ -205,11 +272,13 @@ class KaraLuxerWindow(QDialog):
     def _indicator_bar_start(self) -> None:
         """Starts the busy indicator."""
 
+        self.setEnabled(False)
         self.indicator_bar.setRange(0, 0)
 
     def _indicator_bar_stop(self) -> None:
         """Stops the busy indicator."""
 
+        self.setEnabled(True)
         self.indicator_bar.setRange(0, 1)
 
     def _get_file_path(self, target: QLineEdit, filter: str) -> None:
@@ -249,20 +318,27 @@ class KaraLuxerWindow(QDialog):
         message_window.setText(message)
         message_window.exec()
 
-    def _overlap_decision(self, overlapping_lines: List[ass.line._Event]) -> ass.line._Event:
-        """Generates a popup window to select between overlapping lines.
+    def _overlap_decision(self, overlapping_lines: List[ass.line._Event]) -> None:
+        """Slot which generates a popup window to select between overlapping lines.
 
         Args:
             overlapping_lines (List[ass.line._Event]): A set of overlapping lines.
-
-        Returns:
-            ass.line._Event: The line to discard.
         """
 
         selection_window = OverlapSelectionWindow(overlapping_lines)
         selection_window.exec()
 
-        return overlapping_lines[selection_window.selected_line]
+        self.karaluxer_thread.discard_line_signal.emit(overlapping_lines[selection_window.selected_line])
+
+    def _on_karaluxer_terminate(self) -> None:
+        """Called when the KaraLuxer thread terminates."""
+
+        self._indicator_bar_stop()
+        if self.karaluxer_thread.raised_exception:
+            self._display_message(str(self.karaluxer_thread.raised_exception), self.LVL_ERROR)
+            return
+        else:
+            self._display_message('Finished. Song folder can be found in the "output" folder.', self.LVL_INFO)
 
     def _run(self) -> None:
         """Produces and runs the KaraLuxer instance."""
@@ -311,15 +387,14 @@ class KaraLuxerWindow(QDialog):
                 tv_sized,
                 generate_pitches
             )
-            karaluxer_instance.run(self._overlap_decision)
         except (ValueError, IOError) as e:
             self._display_message(str(e), self.LVL_ERROR)
             self._indicator_bar_stop()
             return
 
-        self._indicator_bar_stop()
-        self._display_message('Finished. Song folder can be found in the "output" folder.', self.LVL_INFO)
-
+        self.karaluxer_thread = KaraLuxerThread(self, karaluxer_instance)
+        self.karaluxer_thread.finished.connect(self._on_karaluxer_terminate)
+        self.karaluxer_thread.start()
 
 
 if __name__ == '__main__':

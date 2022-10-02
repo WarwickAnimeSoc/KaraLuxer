@@ -25,6 +25,4 @@ executables only include the GUI.
 
 - KaraLuxer
   - Duet support
-
-- KaraLuxer GUI
-  - TBD
+  - Better cleanup/handling of downloaded files from Kara.moe
