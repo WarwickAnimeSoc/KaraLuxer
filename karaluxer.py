@@ -14,6 +14,7 @@ import argparse
 import requests
 import ass
 import ass.line
+import ultrastar_pitch
 
 from ultrastar.ultrastar import UltrastarSong
 
@@ -285,6 +286,9 @@ class KaraLuxer():
             download_directory (Path): The directory to save the file to.
         """
 
+        if download_directory.joinpath(filename).exists():
+            return
+
         file_path = Path(filename)
 
         if file_path.suffix == '.ass':
@@ -305,17 +309,17 @@ class KaraLuxer():
             song_folder (Path): The path to the folder containing all the song files.
         """
 
-        ultrastar_pitch_path = Path('tools', 'ultrastar_pitch.exe')
-
-        if not ultrastar_pitch_path.exists():
-            raise IOError('Can not find ultrastar_pitch. Place ultastar_pitch.exe in the "tools" folder.')
-
         notes_file = song_folder.joinpath(song_folder.name + '.txt')
         pitched_file = song_folder.joinpath('pitched.txt')
 
-        ret_val = subprocess.call(['ultrastar-pitch', str(notes_file), '-o', str(pitched_file)])
-        if ret_val:
-            raise IOError('Could not process song with ultrastar_pitch')
+        pitch_pipeline = ultrastar_pitch.DetectionPipeline(
+            ultrastar_pitch.ProjectParser(),
+            ultrastar_pitch.AudioPreprocessor(stride=128),
+            ultrastar_pitch.PitchClassifier(),
+            ultrastar_pitch.StochasticPostprocessor()
+        )
+
+        pitch_pipeline.transform(str(notes_file), str(pitched_file), True)
 
         notes_file.unlink()
         pitched_file.rename(notes_file)
@@ -344,7 +348,7 @@ class KaraLuxer():
             temporary_folder = Path('tmp')
 
             download_directory = temporary_folder.joinpath(kara_id)
-            download_directory.mkdir(parents=True)
+            download_directory.mkdir(parents=True, exist_ok=True)
 
             if not self.files['subtitles']:
                 self._fetch_kara_file(kara_data['sub_file'], download_directory)
