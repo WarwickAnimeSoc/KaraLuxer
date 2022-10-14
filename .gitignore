@@ -13,6 +13,7 @@ tmp/
 
 # Output folder
 out/
+output/
 
 # Pyinstaller folders
 build/

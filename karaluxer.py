@@ -33,7 +33,10 @@ else:
 KARALUXER_BPS = 100
 
 # Regular expression to capture the timing/syllables from a line by stripping out the karaoke tags.
-SYLLABLE_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9.]+\}[A-zÀ-ÿ _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})')
+# Note: Supports multiple tags on a syllable (such as color) but assumes that the karaoke timing will be the first tag.
+SYLLABLE_REGEX = re.compile(
+    r'(\{\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*\}[A-zÀ-ÿ _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})'
+)
 
 # THe default pitch to assign to notes.
 DEFAULT_PITCH = 19
@@ -209,6 +212,10 @@ class KaraLuxer():
             for sound_pair, timing_pair in re.findall(SYLLABLE_REGEX, line.text):
                 if sound_pair:
                     timing, syllable_text = sound_pair.split('}')
+                    # Timing string might contain additional tags besides just the karaoke timings
+                    # (e.g. {\k23\2c&H3AE2FA&}). They are filtered out here to keep only the first tag (this will cause
+                    # issues if the first tag is not the karaoke timings).
+                    timing = re.sub(r'(?<!{)\\[\0-9A-z&]*', '', timing)
                 elif timing_pair:
                     timing = timing_pair.split('\\')[1]
                     syllable_text = None
@@ -420,7 +427,7 @@ class KaraLuxer():
 
         if self.files['background_image']:
             cover_name = song_folder_name + self.files['background_image'].suffix
-            self.ultrastar_song.add_metadata('COVER', cover_name)
+            self.ultrastar_song.add_metadata('BACKGROUND', cover_name)
             shutil.copy(self.files['background_image'], song_folder.joinpath(cover_name))
 
         if self.files['background_video']:
