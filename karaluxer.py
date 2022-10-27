@@ -271,9 +271,10 @@ class KaraLuxer():
             'language': data['langs'][0]['i18n']['eng']
         }
 
-        # Get song artists
+        # Get song artists. Prioritizes "singergroups" (band) field when present.
+        artist_data = data['singergroups'] if data['singergroups'] else data['singers']
         artists = ''
-        for singer in data['singers']:
+        for singer in artist_data:
             artists += singer['name'] + ' & '
         kara_data['artists'] = artists[:-3]
 
@@ -390,7 +391,6 @@ class KaraLuxer():
                 if media_path.suffix != '.mp3':
                     if not self.files['background_video']:
                         self.files['background_video'] = media_path
-
 
         else:
             # Add default meta tags if Kara.moe is not used. These will need to be edited by hand in the produced
