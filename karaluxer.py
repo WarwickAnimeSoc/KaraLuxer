@@ -380,6 +380,18 @@ class KaraLuxer():
                     self.files['audio'] = audio_path
                 else:
                     self.files['audio'] = media_path
+
+            # Fetch the background video if it wasn't already downloaded for the audio. Used when a user specifies an
+            # audio file manually.
+            if not self.files['background_video']:
+                self._fetch_kara_file(kara_data['media_file'], download_directory)
+                media_path = download_directory.joinpath(kara_data['media_file'])
+
+                if media_path.suffix != '.mp3':
+                    if not self.files['background_video']:
+                        self.files['background_video'] = media_path
+
+
         else:
             # Add default meta tags if Kara.moe is not used. These will need to be edited by hand in the produced
             # text file.
