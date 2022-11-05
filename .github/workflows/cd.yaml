@@ -46,8 +46,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          echo $PATH
-          sudo sed -i '|C:/hostedtoolcache/windows|/Users/runner/hostedtoolcache|' cd.spec
+          sudo sed -i 's|C:/hostedtoolcache/windows|/Users/runner/hostedtoolcache|' cd.spec
           python -m pip install -r requirements.txt
 
       - uses: FedericoCarboni/setup-ffmpeg@v1
@@ -56,7 +55,7 @@ jobs:
       - name: Create bundle
         run: pyinstaller cd.spec
 
-      - run: ls
+      - run: echo $PATH
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
