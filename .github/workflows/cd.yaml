@@ -9,7 +9,7 @@ jobs:
       - uses: Wandalen/wretry.action@master
         with:
           action: FedericoCarboni/setup-ffmpeg@v1
-          with:
+          with: |
             id: setup-ffmpeg
           attempt_limit: 3
           attempt_delay: 5000
@@ -55,7 +55,7 @@ jobs:
       - uses: Wandalen/wretry.action@master
         with:
           action: FedericoCarboni/setup-ffmpeg@v1
-          with:
+          with: |
             id: setup-ffmpeg
           attempt_limit: 3
           attempt_delay: 5000
