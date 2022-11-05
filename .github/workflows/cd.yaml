@@ -48,6 +48,7 @@ jobs:
         run: |
           sudo sed -i '' 's|C:/hostedtoolcache/windows|/Users/runner/hostedtoolcache|' cd.spec
           sudo sed -i '' 's|.exe||' cd.spec
+          sudo sed -i '' 's|/lib/|/lib/python3.10|' cd.spec
           python -m pip install -r requirements.txt
 
       - uses: FedericoCarboni/setup-ffmpeg@v1
