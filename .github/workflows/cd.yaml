@@ -21,8 +21,8 @@ jobs:
 
       - name: Create bundle
         run: |
-          "(gc karaluxer.spec) -replace 'tools/ffmpeg.exe', 'C:/hostedtoolcache/windows/ffmpeg/5.0.1/x64/ffmpeg.exe' | Out-File -encoding UTF8 karaluxer.spec"
-          "(gc karaluxer.spec) -replace 'venv/', 'C:/hostedtoolcache/windows/Python/3.10.8/x64/ | Out-File -encoding UTF8 karaluxer.spec"
+          (gc karaluxer.spec) -replace 'tools/ffmpeg.exe', 'C:/hostedtoolcache/windows/ffmpeg/5.0.1/x64/ffmpeg.exe' | Out-File -encoding UTF8 karaluxer.spec
+          (gc karaluxer.spec) -replace 'venv/', 'C:/hostedtoolcache/windows/Python/3.10.8/x64/ | Out-File -encoding UTF8 karaluxer.spec
           pyinstaller karaluxer.spec
 
       - name: Upload artifacts
