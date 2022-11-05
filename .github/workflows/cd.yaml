@@ -52,10 +52,10 @@ jobs:
       - uses: FedericoCarboni/setup-ffmpeg@v1
         id: setup-ffmpeg
 
+      - run: echo $PATH
+
       - name: Create bundle
         run: pyinstaller cd.spec
-
-      - run: echo $PATH
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
