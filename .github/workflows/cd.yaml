@@ -38,6 +38,8 @@ jobs:
       - name: Install ffmpeg
         run: |
           brew install ffmpeg
+          cd /usr/local/Cellar/ffmpeg/5.1.2
+          ls
 
       - name: Install python
         uses: actions/setup-python@v4
