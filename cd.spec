@@ -6,8 +6,8 @@ block_cipher = None
 
 a = Analysis(['karaluxer.py'],
              pathex=[],
-             binaries=[('C:\hostedtoolcache\windows\ffmpeg\5.0.1\x64\ffmpeg.exe', '.')],
-             datas=[('C:\hostedtoolcache\windows\Python\3.10.8\x64\lib\site-packages\certifi\cacert.pem', 'certifi')],
+             binaries=[('C:/hostedtoolcache/windows/ffmpeg/5.0.1/x64/ffmpeg.exe', '.')],
+             datas=[('C:/hostedtoolcache/windows/Python/3.10.8/x64/lib/site-packages/certifi/cacert.pem', 'certifi')],
              hiddenimports=[],
              hookspath=[],
              hooksconfig={},
