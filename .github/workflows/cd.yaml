@@ -1,0 +1,30 @@
+name: CI/CD
+
+on: [push, workflow_dispatch]
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: FedericoCarboni/setup-ffmpeg@v1
+        id: setup-ffmpeg
+
+      - name: Install python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Create bundle
+        run: python -m pyinstaller karaluxer.spec
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: windows
+          path: ${{ github.workspace }}/*.exe
+          retention-days: 90
