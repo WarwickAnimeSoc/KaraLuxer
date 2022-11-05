@@ -6,10 +6,15 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: Wandalen/wretry.action@master
+        with:
+          action: FedericoCarboni/setup-ffmpeg@v1
+          with:
+            id: setup-ffmpeg
+          attempt_limit: 3
+          attempt_delay: 5000
 
-      - uses: FedericoCarboni/setup-ffmpeg@v1
-        id: setup-ffmpeg
+      - uses: actions/checkout@v3
 
       - name: Install python
         uses: actions/setup-python@v4
@@ -21,10 +26,6 @@ jobs:
 
       - name: Create bundle
         run: pyinstaller cd.spec
-
-      - run: |
-          cd dist
-          dir
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
@@ -51,13 +52,13 @@ jobs:
           sudo sed -i '' 's|/lib/|/lib/python3.10/|' cd.spec
           python -m pip install -r requirements.txt
 
-      - uses: FedericoCarboni/setup-ffmpeg@v1
-        id: setup-ffmpeg
-
-      - run: |
-          echo $PATH
-          cd /Users/runner/hostedtoolcache/ffmpeg/5.0.1/x64/
-          ls
+      - uses: Wandalen/wretry.action@master
+        with:
+          action: FedericoCarboni/setup-ffmpeg@v1
+          with:
+            id: setup-ffmpeg
+          attempt_limit: 3
+          attempt_delay: 5000
 
       - name: Create bundle
         run: pyinstaller cd.spec
@@ -65,6 +66,6 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
         with:
-          name: windows
+          name: macos
           path: ${{ github.workspace }}/dist/*
           retention-days: 90
