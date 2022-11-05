@@ -61,3 +61,35 @@ jobs:
           name: macos
           path: ${{ github.workspace }}/dist/*
           retention-days: 90
+
+  ubuntu:
+    runs-on:   ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install ffmpeg
+          sudo find /usr -type f -name ffmpeg
+
+      - name: Install python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          sudo sed -i 's|tools/ffmpeg.exe|/usr/local/Cellar/ffmpeg/5.1.2/bin/ffmpeg|' karaluxer.spec
+          sudo sed -i 's|venv/lib/|/Users/runner/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/|' karaluxer.spec
+          python -m pip install -r requirements.txt
+
+      - name: Create bundle
+        run: pyinstaller karaluxer.spec
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: macos
+          path: ${{ github.workspace }}/dist/*
+          retention-days: 90
