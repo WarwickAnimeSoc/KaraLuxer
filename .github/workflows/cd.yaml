@@ -20,7 +20,10 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Create bundle
-        run: pyinstaller cd.spec
+        run: |
+          "(gc karaluxer.spec) -replace 'tools/ffmpeg.exe', 'C:/hostedtoolcache/windows/ffmpeg/5.0.1/x64/ffmpeg.exe' | Out-File -encoding UTF8 karaluxer.spec"
+          "(gc karaluxer.spec) -replace 'venv/', 'C:/hostedtoolcache/windows/Python/3.10.8/x64/ | Out-File -encoding UTF8 karaluxer.spec"
+          pyinstaller karaluxer.spec
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
@@ -45,12 +48,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo sed -i '' 's|C:/hostedtoolcache/windows/ffmpeg/5.0.1/x64/ffmpeg.exe|/usr/local/Cellar/ffmpeg/5.1.2/bin/ffmpeg|' cd.spec
-          sudo sed -i '' 's|C:/hostedtoolcache/windows/Python/3.10.8/x64/lib/site-packages/certifi/cacert.pem|/Users/runner/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/site-packages/certifi/cacert.pem|' cd.spec
+          sudo sed -i '' 's|tools/ffmpeg.exe|/usr/local/Cellar/ffmpeg/5.1.2/bin/ffmpeg|' karaluxer.spec
+          sudo sed -i '' 's|venv/lib/|/Users/runner/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/|' karaluxer.spec
           python -m pip install -r requirements.txt
 
       - name: Create bundle
-        run: pyinstaller cd.spec
+        run: pyinstaller karaluxer.spec
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
