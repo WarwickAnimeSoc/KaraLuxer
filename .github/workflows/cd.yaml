@@ -80,7 +80,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo sed -i 's|tools/ffmpeg.exe|/usr/local/Cellar/ffmpeg/5.1.2/bin/ffmpeg|' karaluxer.spec
+          sudo sed -i 's|tools/ffmpeg.exe|/usr/bin/ffmpeg|' karaluxer.spec
           sudo sed -i 's|venv/lib/|/Users/runner/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/|' karaluxer.spec
           python -m pip install -r requirements.txt
 
