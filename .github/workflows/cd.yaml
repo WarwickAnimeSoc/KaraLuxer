@@ -70,8 +70,7 @@ jobs:
       - name: Install ffmpeg
         run: |
           sudo apt-get update
-          sudo apt-get install ffmpeg
-          sudo find /usr -type f -name ffmpeg
+          sudo apt-get install ffmpeg python3-pyqt5
 
       - name: Install python
         uses: actions/setup-python@v4
@@ -81,7 +80,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo sed -i 's|tools/ffmpeg.exe|/usr/bin/ffmpeg|' karaluxer.spec
-          sudo sed -i 's|venv/lib/|/Users/runner/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/|' karaluxer.spec
+          sudo sed -i 's|venv/lib/|/opt/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/|' karaluxer.spec
           python -m pip install -r requirements.txt
 
       - name: Create bundle
@@ -90,6 +89,6 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
         with:
-          name: macos
+          name: ubuntu
           path: ${{ github.workspace }}/dist/*
           retention-days: 90
