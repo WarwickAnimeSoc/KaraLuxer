@@ -22,9 +22,43 @@ jobs:
       - name: Create bundle
         run: pyinstaller cd.spec
 
+      - run: dir
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
         with:
           name: windows
           path: ${{ github.workspace }}\*.exe
+          retention-days: 90
+
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: FedericoCarboni/setup-ffmpeg@v1
+        id: setup-ffmpeg
+
+      - name: Install python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          echo $PATH
+          sudo sed -i '|C:/hostedtoolcache/windows|/Users/runner/hostedtoolcache|' cd.spec
+          python -m pip install -r requirements.txt
+
+      - name: Create bundle
+        run: pyinstaller cd.spec
+
+      - run: ls
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: windows
+          path: ${{ github.workspace }}/*.app
           retention-days: 90
