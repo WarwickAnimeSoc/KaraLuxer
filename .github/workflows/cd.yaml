@@ -38,7 +38,6 @@ jobs:
       - name: Install ffmpeg
         run: |
           brew install ffmpeg
-          echo $PATH
 
       - name: Install python
         uses: actions/setup-python@v4
@@ -47,7 +46,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo sed -i '' 's|C:/hostedtoolcache/windows/ffmpeg/5.0.1/x64/ffmpeg.exe|/usr/local/Cellar/ffmpeg/5.0.2/ffmpeg|' cd.spec
+          sudo sed -i '' 's|C:/hostedtoolcache/windows/ffmpeg/5.0.1/x64/ffmpeg.exe|/usr/local/Cellar/ffmpeg/5.1.2/ffmpeg|' cd.spec
           sudo sed -i '' 's|C:/hostedtoolcache/windows/Python/3.10.8/x64/lib/site-packages/certifi/cacert.pem|/Users/runner/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/site-packages/certifi/cacert.pem|' cd.spec
           python -m pip install -r requirements.txt
 
