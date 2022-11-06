@@ -1,5 +1,7 @@
 from typing import Optional, List, Dict
 
+import warnings
+
 
 class NoteLine():
 
@@ -29,7 +31,11 @@ class NoteLine():
 
         # Separator lines only need the start beat, normal lines require all data.
         if self.note_type != '-' and not (duration and pitch and text):
-            raise ValueError('Non "-" (linebreak) type lines require the duration, pitch and text to be specified.')
+            # Special case where a note has a duration of 0. This should still be allowed but warn the user.
+            if duration == 0:
+                warnings.warn('0 beat long note')
+            else:
+                raise ValueError('Non "-" (linebreak) type lines require the duration, pitch and text to be specified.')
 
     def __str__(self) -> str:
         """Produces a string representation of the note.
