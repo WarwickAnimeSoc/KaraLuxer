@@ -7,7 +7,7 @@ import sys
 from threading import Thread
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import (QApplication, QMessageBox, QGridLayout, QGroupBox, QLabel, QLineEdit, QPushButton,
-                             QDialog, QFileDialog, QCheckBox, QVBoxLayout, QProgressBar)
+                             QDialog, QFileDialog, QCheckBox, QVBoxLayout, QProgressBar, QVBoxLayout)
 
 import ass
 import ass.line
@@ -93,11 +93,11 @@ class OverlapSelectionWindow(QDialog):
         self.setWindowFlag(QtCore.Qt.WindowCloseButtonHint, False)
 
         # Window layout
-        window_layout = QGridLayout()
+        window_layout = QVBoxLayout()
         self.setLayout(window_layout)
 
         # Information
-        window_layout.addWidget(QLabel('The following lines overlap, please select one to DISCARD.'), 0, 0)
+        window_layout.addWidget(QLabel('The following lines overlap, please select one to DISCARD.'))
 
         # Line selection buttons
         for i in range(0, len(overlapping_lines)):
@@ -110,7 +110,7 @@ class OverlapSelectionWindow(QDialog):
                 clean_line
             )
             line_button = QPushButton(button_string)
-            line_button.clicked.connect(lambda: self._line_select_callback(i))
+            line_button.clicked.connect(lambda _, index=i: self._line_select_callback(index))
             window_layout.addWidget(line_button)
 
     def _line_select_callback(self, line_index: int) -> None:
