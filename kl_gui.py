@@ -1,13 +1,13 @@
 # GUI for KaraLuxer
 
-from typing import List, Callable
+from typing import List, Callable, Tuple
 
 import re
 import sys
 from threading import Thread
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import (QApplication, QMessageBox, QGridLayout, QGroupBox, QLabel, QLineEdit, QPushButton,
-                             QDialog, QFileDialog, QCheckBox, QVBoxLayout, QProgressBar, QVBoxLayout)
+                             QDialog, QFileDialog, QCheckBox, QVBoxLayout, QProgressBar, QButtonGroup)
 
 import ass
 import ass.line
@@ -19,6 +19,7 @@ class KaraLuxerThread(QtCore.QThread):
     """Custom Thread for running a KaraLuxer instance. Will raise any exceptions produced by Karaluxer."""
 
     discard_line_signal = QtCore.pyqtSignal(object)
+    discard_style_signal = QtCore.pyqtSignal(str)
 
     def __init__(
         self,
@@ -29,22 +30,27 @@ class KaraLuxerThread(QtCore.QThread):
 
         Args:
             karaluxer_instance (KaraLuxer): The KaraLuxer instance to execute.
-            overlap_function (Callable[[List[ass.line._Event]], ass.line._Event]): The function used to handle deciding
-                between overlapping lines.
         """
         super().__init__(parent)
 
         self.karaluxer_instance = karaluxer_instance
 
         self.discard_line_signal.connect(self._on_line_discard)
+        self.discard_style_signal.connect(self._on_style_discard)
 
         self.selected_line = None
+        self.selected_style = None
         self.raised_exception = None
 
     def _on_line_discard(self, discarded_line: ass.line._Event) -> None:
         """Slot used to set the selected line from the GUI thread."""
 
         self.selected_line = discarded_line
+
+    def _on_style_discard(self, discarded_style: str) -> None:
+        """Slot used to set the selected style from the GUI thread."""
+
+        self.selected_style = discarded_style
 
     def _overlap_decision(self, overlapping_lines: List[ass.line._Event]) -> ass.line._Event:
         """Generates a popup window to select between overlapping lines.
@@ -66,11 +72,32 @@ class KaraLuxerThread(QtCore.QThread):
 
         return discard_line
 
+    def _style_selection(self, styles: List[Tuple[str, int]]) -> str:
+        """Generates a popup window to select between overlapping lines.
+
+        Args:
+            styles (List[Tuple[str, int]]): A set of styles, each style tuple contains its name and how many lines are
+            in style.
+
+        Returns:
+            str: The style to discard.
+        """
+
+        self.parent().style_window_signal.emit(styles)
+
+        while (not self.selected_style):
+            pass
+
+        discard_style = self.selected_style
+        self.selected_style = None
+
+        return discard_style
+
     def run(self) -> None:
         """Executes the KaraLuxer instance."""
 
         try:
-            self.karaluxer_instance.run(self._overlap_decision)
+            self.karaluxer_instance.run(self._overlap_decision, self._style_selection)
         except (ValueError, IOError) as e:
             self.raised_exception = e
 
@@ -126,10 +153,59 @@ class OverlapSelectionWindow(QDialog):
         self.close()
 
 
+class StyleSelectionWindow(QDialog):
+    """Window used to choose between different styles."""
+
+    def __init__(self, styles: List[Tuple[str, int]]) -> None:
+        """Constructor for the StyleSelectionWindow.
+
+        Args:
+            styles (List[Tuple[str, int]]): A list of styles to choose between. Each style provides its name and how
+                many lines in that style exist.
+        """
+
+        super().__init__()
+
+        # Window settings and flags
+        self.setWindowTitle('Choose a style to discard')
+        self.setGeometry(20, 20, 600, 200)
+        self.setWindowFlag(QtCore.Qt.WindowCloseButtonHint, False)
+
+        # Window layout
+        window_layout = QVBoxLayout()
+        self.setLayout(window_layout)
+
+        # Information
+        window_layout.addWidget(QLabel('Select a style to DISCARD. All lines in this style will be discarded.'))
+
+        # Style selection buttons
+        for style in styles:
+            button_string = 'Style = "{0}" | {1} lines in this style.'.format(
+                style[0],
+                style[1]
+            )
+            style_button = QPushButton(button_string)
+            style_button.clicked.connect(lambda _, style_name=style[0]: self._style_select_callback(style_name))
+            window_layout.addWidget(style_button)
+
+    def _style_select_callback(self, style_name: str) -> None:
+        """Callback function used by the buttons to set the style to discard and close the window.
+
+        The selected style can then be retrieved from the `selected_style` attribute.
+
+        Args:
+            style_name (str): The name of the style to discard.
+        """
+
+        self.selected_style = style_name
+        self.close()
+
+
 class KaraLuxerWindow(QDialog):
     """Main window for the script interface."""
 
     overlap_window_signal = QtCore.pyqtSignal(object)
+    style_window_signal = QtCore.pyqtSignal(object)
 
     def __init__(self) -> None:
         """Constructor for the KaraLuxer window."""
@@ -144,6 +220,7 @@ class KaraLuxerWindow(QDialog):
         # Thread for running KaraLuxer.
         self.karaluxer_thread = None
         self.overlap_window_signal.connect(self._overlap_decision)
+        self.style_window_signal.connect(self._style_decision)
 
         # Window settings and flags
         self.setWindowTitle('KaraLuxer')
@@ -221,6 +298,47 @@ class KaraLuxerWindow(QDialog):
 
         optional_args_group.setLayout(optional_args_layout)
 
+        # Overlap handing group
+        overlap_handling_group = QGroupBox('Overlap Handling')
+        overlap_handling_layout = QGridLayout()
+        overlap_handling_layout.setColumnStretch(0, 1)
+        overlap_handling_layout.setColumnStretch(1, 2)
+        overlap_handling_layout.setColumnStretch(2, 1)
+
+        overlap_handling_button_group = QButtonGroup(self)
+        overlap_handling_button_group.setExclusive(True)
+
+        self.ignore_overlaps_checkbox = QCheckBox()
+        self.ignore_overlaps_checkbox.setChecked(True)
+        overlap_handling_button_group.addButton(self.ignore_overlaps_checkbox)
+        overlap_handling_layout.addWidget(QLabel('Ignore Overlaps:'), 0, 0)
+        overlap_handling_layout.addWidget(self.ignore_overlaps_checkbox, 0, 1)
+        overlap_handling_layout.addWidget(
+            QLabel('Ignore overlapping lines (Will potentially require manual editing)'), 0, 2)
+
+        self.individual_overlaps_checkbox = QCheckBox()
+        overlap_handling_button_group.addButton(self.individual_overlaps_checkbox)
+        overlap_handling_layout.addWidget(QLabel('Filter Individually:'), 1, 0)
+        overlap_handling_layout.addWidget(self.individual_overlaps_checkbox, 1, 1)
+        overlap_handling_layout.addWidget(
+            QLabel('Filter overlapping lines individually'), 1, 2)
+
+        self.style_overlaps_checkbox = QCheckBox()
+        overlap_handling_button_group.addButton(self.style_overlaps_checkbox)
+        overlap_handling_layout.addWidget(QLabel('Filter by Style:'), 2, 0)
+        overlap_handling_layout.addWidget(self.style_overlaps_checkbox, 2, 1)
+        overlap_handling_layout.addWidget(
+            QLabel('Filter overlapping lines by their style'), 2, 2)
+
+        self.duet_overlaps_checkbox = QCheckBox()
+        overlap_handling_button_group.addButton(self.duet_overlaps_checkbox)
+        overlap_handling_layout.addWidget(QLabel('Map as Duet:'), 3, 0)
+        overlap_handling_layout.addWidget(self.duet_overlaps_checkbox, 3, 1)
+        overlap_handling_layout.addWidget(
+            QLabel('Map the song as a Duet'), 3, 2)
+
+        overlap_handling_group.setLayout(overlap_handling_layout)
+
         # Advanced arguments group
         advanced_args_group = QGroupBox('Advanced Arguments')
         advanced_args_layout = QGridLayout()
@@ -228,22 +346,16 @@ class KaraLuxerWindow(QDialog):
         advanced_args_layout.setColumnStretch(1, 2)
         advanced_args_layout.setColumnStretch(2, 1)
 
-        self.ignore_overlaps_checkbox = QCheckBox()
-        advanced_args_layout.addWidget(QLabel('Ignore Overlaps:'), 0, 0)
-        advanced_args_layout.addWidget(self.ignore_overlaps_checkbox, 0, 1)
-        advanced_args_layout.addWidget(
-            QLabel('Ignore overlapping lines (Will potentially require manual editing)'), 0, 2)
-
         self.force_dialogue_checkbox = QCheckBox()
-        advanced_args_layout.addWidget(QLabel('Force Dialogue:'), 1, 0)
-        advanced_args_layout.addWidget(self.force_dialogue_checkbox, 1, 1)
+        advanced_args_layout.addWidget(QLabel('Force Dialogue:'), 0, 0)
+        advanced_args_layout.addWidget(self.force_dialogue_checkbox, 0, 1)
         advanced_args_layout.addWidget(
-            QLabel('Forces the script to use lines marked "Dialogue" (Not recommended for Kara.moe maps)'), 1, 2)
+            QLabel('Forces the script to use lines marked "Dialogue" (Not recommended for Kara.moe maps)'), 0, 2)
 
         self.autopitch_checkbox = QCheckBox()
-        advanced_args_layout.addWidget(QLabel('Generate pitches:'), 2, 0)
-        advanced_args_layout.addWidget(self.autopitch_checkbox, 2, 1)
-        advanced_args_layout.addWidget(QLabel('Will pitch the file using "ultrastar_pitch"'), 2, 2)
+        advanced_args_layout.addWidget(QLabel('Generate pitches:'), 1, 0)
+        advanced_args_layout.addWidget(self.autopitch_checkbox, 1, 1)
+        advanced_args_layout.addWidget(QLabel('Will pitch the file using "ultrastar_pitch"'), 1, 2)
 
         advanced_args_group.setLayout(advanced_args_layout)
 
@@ -261,6 +373,7 @@ class KaraLuxerWindow(QDialog):
         window_layout.addWidget(sub_source_group)
         window_layout.addWidget(essential_args_group)
         window_layout.addWidget(optional_args_group)
+        window_layout.addWidget(overlap_handling_group)
         window_layout.addWidget(advanced_args_group)
         window_layout.addWidget(self.indicator_bar)
         window_layout.addWidget(run_button)
@@ -328,7 +441,20 @@ class KaraLuxerWindow(QDialog):
         selection_window = OverlapSelectionWindow(overlapping_lines)
         selection_window.exec()
 
-        self.karaluxer_thread.discard_line_signal.emit(overlapping_lines[selection_window.selected_line])
+        self.karaluxer_thread.discard_line_signal.emit(overlapping_lines[selection_window.selected_style])
+
+    def _style_decision(self, styles: List[Tuple[str, int]]) -> None:
+        """Slot which generates a popup window to select between styles.
+
+        Args:
+            overlapping_lines (List[Tuple[str, int]]): A set of styles. Each style tuple stores its name and how many
+                lines correspond to that style.
+        """
+
+        selection_window = StyleSelectionWindow(styles)
+        selection_window.exec()
+
+        self.karaluxer_thread.discard_style_signal.emit(selection_window.selected_style)
 
     def _on_karaluxer_terminate(self) -> None:
         """Called when the KaraLuxer thread terminates."""
@@ -370,9 +496,15 @@ class KaraLuxerWindow(QDialog):
         audio_file = self.audio_input.text() if self.audio_input.text() else None
         tv_sized = self.tv_checkbox.isChecked()
 
-        ignore_overlaps = self.ignore_overlaps_checkbox.isChecked()
+        overlap_filter_mode = None
+        overlap_filter_mode = "style" if self.style_overlaps_checkbox.isChecked() else overlap_filter_mode
+        overlap_filter_mode = "individual" if self.individual_overlaps_checkbox.isChecked() else overlap_filter_mode
+        overlap_filter_mode = "duet" if self.duet_overlaps_checkbox.isChecked() else overlap_filter_mode
+
         force_dialogue = self.force_dialogue_checkbox.isChecked()
         generate_pitches = self.autopitch_checkbox.isChecked()
+
+        print('overlap mode: ' + str(overlap_filter_mode))
 
         try:
             karaluxer_instance = KaraLuxer(
@@ -382,7 +514,7 @@ class KaraLuxerWindow(QDialog):
                 bg_file,
                 bgv_file,
                 audio_file,
-                ignore_overlaps,
+                overlap_filter_mode,
                 force_dialogue,
                 tv_sized,
                 generate_pitches

@@ -103,7 +103,6 @@ class UltrastarSong():
         note = NoteLine(note_type, start_beat, duration, pitch, text)
         self.note_lines[player].append(note)
 
-
     def __str__(self) -> str:
         """Produces a string representation of the song.
 

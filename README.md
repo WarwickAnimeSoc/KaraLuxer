@@ -33,6 +33,8 @@ a FFMPEG binary must be placed in the `tools` subfolder, as well as `pitchnet_20
 
 ## TODO
 
-- KaraLuxer
-  - Duet support
-  - Better cleanup/handling of downloaded files from Kara.moe
+- Improve Duet/Style support.
+  - Change Duet mode to support combining styles into duet parts.
+  - Change Style filter mode to support removing only specific styles.
+- Make popup UIs (Style and Line selection) more general to avoid code repetition.
+  - Both popups are functionally the same, they could be combined into one.

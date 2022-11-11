@@ -1,7 +1,7 @@
 # Core Karaluxer functionality - CLI interface
 
 import shutil
-from typing import Callable, Dict, Optional, List
+from typing import Callable, Dict, Optional, List, Tuple
 
 from pathlib import Path
 import sys
@@ -56,7 +56,7 @@ class KaraLuxer():
         background_i_file: Optional[str] = None,
         background_v_file: Optional[str] = None,
         audio_file: Optional[str] = None,
-        ignore_overlaps: bool = False,
+        overlap_filter_method: Optional[str] = None,
         force_dialogue_lines: bool = False,
         tv_sized: bool = False,
         autopitch: bool = False
@@ -75,7 +75,10 @@ class KaraLuxer():
             background_i_file (Optional[str], optional): The path to the background image to use. Defaults to None.
             background_v_file (Optional[str], optional): The path to the background video to use. Defaults to None.
             audio_file (Optional[str], optional): The path to the audio to use. Defaults to None.
-            ignore_overlaps (bool, optional): If True overlaps will be left in the ultrastar file. Defaults to False.
+            overlap_filter_method (Optional[str], optional): Sets the behaviour for how overlapping lines should be
+                handled. None will ignore overlaps, "style" will make the user select one subtitle style to keep,
+                "individual" will allow the user to select lines to discard individually, and "duet" will map the song
+                as a duet using the styles in the subtitle file.
             force_dialogue_lines (bool, optional): If True only Dialogue lines will be parsed from the subtitle file.
                 Not recommended unless specifying a manual subtitle file.
             tv_sized (bool, optional): If True will append (TV) to the song title. (This is the convention that
@@ -95,7 +98,7 @@ class KaraLuxer():
             'background_video': Path(background_v_file) if background_v_file else None,
             'cover': Path(cover_file) if cover_file else None
         }
-        self.ignore_overlaps = ignore_overlaps
+        self.overlap_filter_method = overlap_filter_method
         self.force_dialogue_lines = force_dialogue_lines
         self.tv_sized = tv_sized
         self.autopitch = autopitch
@@ -121,6 +124,11 @@ class KaraLuxer():
 
         if self.files['cover'] and not self.files['cover'].exists():
             raise IOError('Cover image not found.')
+
+        if overlap_filter_method not in [None, 'style', 'individual', 'duet']:
+            raise ValueError(
+                'If specifying an overlap filter method it must be one of "individual", "style" or "duet".'
+            )
 
         self.ultrastar_song = UltrastarSong(KARALUXER_BPS * 60)
 
@@ -156,7 +164,73 @@ class KaraLuxer():
 
         return relevant_lines
 
-    def _filter_overlapping_lines(
+    def _get_styles_in_lines(self, lines: List[ass.line._Event]) -> List[Tuple[str, int]]:
+        """Finds all unique styles in a set of lines, as well as how many lines correspond to that style.
+
+        Args:
+            lines (List[ass.line._Event]): The list of lines to search for styles.
+
+        Returns:
+            List[Tuple[str, int]]: The list of styles found, along with how many lines in that style exist.
+        """
+
+        styles = {}
+        for line in lines:
+            line_count = styles.setdefault(line.style, 0)
+            styles[line.style] = line_count + 1
+
+        return list(styles.items())
+
+    def _get_lines_in_style(self, style: str, lines: List[ass.line._Event]) -> List[ass.line._Event]:
+        """Filters a list of lines to keep only those in a certain style.
+
+        Args:
+            style (str): The style to filter by.
+            lines (List[ass.line._Event]): The list of lines to filter.
+
+        Returns:
+            List[ass.line._Event]: Lines with the correct style.
+        """
+
+        return list(filter(lambda l: l.style == style, lines))
+
+    def _filter_overlapping_lines_style(
+        self,
+        lines: List[ass.line._Event],
+        style_selection_function: Callable[[List[Tuple[str, int]]], str]
+    ) -> List[ass.line._Event]:
+        """Filters lines by removing any lines that are not in a selected style. Uses a user provided function to
+        discard styles until there is only one remaining.
+
+        Does not guarantee that there are no overlaps remaining within the selected style.
+
+        Args:
+            lines (List[ass.line._Event]): The list of lines to filter.
+            style_selection_function (Callable[[List[Tuple[str, int]]], str]): The function that will be used to discard
+                styles. It should return the name of the style to discard.
+
+        Returns:
+            List[ass.line._Event]: The filtered list of lines that match the selected style.
+        """
+
+        styles = self._get_styles_in_lines(lines)
+
+        # If there is only one style then no filtering needs to be done. There may still be overlaps within an
+        # individual style but these will be ignored.
+        if len(styles) == 1:
+            warnings.warn(
+                'Style mode has been used for overlap filtering, but there is only one style. Overlaps will be ignored.'
+            )
+            return lines
+
+        # Prompt user to discard styles until there is only one.
+        while (len(styles) > 1):
+            selected_style = style_selection_function(styles)
+            styles = [style for style in styles if style[0] != selected_style]
+
+        return self._get_lines_in_style(styles[0][0], lines)
+
+    def _filter_overlapping_lines_individual(
         self,
         lines: List[ass.line._Event],
         decision_function: Callable[[List[ass.line._Event]], ass.line._Event]
@@ -197,11 +271,54 @@ class KaraLuxer():
 
         return lines
 
-    def _convert_lines(self, lines: List[ass.line._Event]) -> None:
+    def _separate_duet_parts(
+        self,
+        lines: List[ass.line._Event],
+        style_selection_function: Callable[[List[Tuple[str, int]]], str]
+    ) -> Tuple[List[ass.line._Event], ...]:
+        """Separates lines into two duet parts based on their style. Uses a user provided function to
+        discard styles until there is only two remaining.
+
+        Args:
+            lines (List[ass.line._Event]): The lines to separate.
+            style_selection_function (Callable[[List[Tuple[str, int]]], str]): The function that will be used to discard
+            styles. It should return the name of the style to discard.
+
+        Returns:
+            Tuple[List[ass.line._Event], ...]: The parts of the duet. Tuple will have a length of 1 if the subtitles did
+                not contain more than one style, otherwise it will have a length of 2.
+        """
+
+        styles = self._get_styles_in_lines(lines)
+
+        # If there is only one style then a duet can not be produced, instead the song will be mapped as normal.
+        if len(styles) == 1:
+            warnings.warn(
+                'Duet mode has been used but there is only one style. Song will be mapped as normal;.'
+            )
+            return (lines,)
+
+        # Prompt user to discard styles until there is only two.
+        while (len(styles) > 2):
+            selected_style = style_selection_function(styles)
+            styles = [style for style in styles if style[0] != selected_style]
+
+        # Add metadata tags to the ultrastar file that name the duet sections according to their style.
+        self.ultrastar_song.add_metadata('#DUETSINGERP1', styles[0][0])
+        self.ultrastar_song.add_metadata('#DUETSINGERP2', styles[1][0])
+
+        p1_lines = self._get_lines_in_style(styles[0][0], lines)
+        p2_lines = self._get_lines_in_style(styles[1][0], lines)
+
+        return (p1_lines, p2_lines)
+
+    def _convert_lines(self, lines: List[ass.line._Event], duet_part: str = 'P1') -> None:
         """Convert the subtitle lines to notes for the ultrastar song.
 
         Args:
             lines (List[ass.line._Event]): The subtitle lines to parse.
+            duet_part (str, optional): The duet part that lines should be assigned to. Defaults to P1. A song will only
+                be mapped as a duet if at least 1 line with duet_part/player "P2" exists.
         """
 
         for line in lines:
@@ -241,7 +358,14 @@ class KaraLuxer():
                 # Currently this is done by simply reducing the duration by one. This could use improvement.
                 tweaked_duration = converted_duration - 1 if converted_duration > 1 else converted_duration
 
-                self.ultrastar_song.add_note(':', current_beat, tweaked_duration, DEFAULT_PITCH, syllable_text)
+                self.ultrastar_song.add_note(
+                    ':',
+                    current_beat,
+                    tweaked_duration,
+                    DEFAULT_PITCH,
+                    syllable_text,
+                    duet_part
+                )
 
                 current_beat += converted_duration
 
@@ -334,14 +458,18 @@ class KaraLuxer():
 
     def run(
         self,
-        overlap_decision_function: Optional[Callable[[List[ass.line._Event]], ass.line._Event]] = None
+        overlap_decision_function: Optional[Callable[[List[ass.line._Event]], ass.line._Event]] = None,
+        style_select_function: Optional[Callable[[List[Tuple[str, int]]], str]] = None
     ) -> None:
         """Runs this Karaluxer instance to produce the ultrastar song.
 
         Args:
             overlap_decision_function (Optional[Callable[[List[ass.line._Event]], ass.line._Event]], optional):
-                The decision function to use when selecting overlapping lines. Must be specified if self.ignore_overlaps
-                is False.
+                The decision function to use when selecting overlapping lines. Must be specified if
+                self.overlap_filter_method is "individual".
+            style_select_function (Optional[Callable[[List[Tuple[str, int]]], str]], optional):
+                The decision function to use when selecting a style to discard. Must be specified if
+                self.overlap_filter_method is "duet" or "style".
         """
 
         if self.kara_url:
@@ -416,13 +544,40 @@ class KaraLuxer():
 
         subtitle_lines = self._load_subtitle_lines()
 
-        if not self.ignore_overlaps:
+        # Overlaps in the subtitles are handled in one of four ways:
+        #   If self.overlap_filter_method is None, overlaps will be ignored and left in the ultrastar file.
+        #   If self.overlap_filter_method is "style", users will be prompted to styles to discard until only one style
+        #       remains, any lines not in that style will be discarded.
+        #   If self.overlap_filter_method is "individual", users will discard overlapping lines by selecting lines
+        #       individually whenever there is a set of overlaps.
+        #   If self.overlap_filter_method is "duet", users will be asked to discard any styles in the subtitle file
+        #       until there is exactly 2 styles left, these will then be mapped individually to produce the duet parts.
+        if self.overlap_filter_method == 'style':
+            if style_select_function:
+                subtitle_lines = self._filter_overlapping_lines_style(subtitle_lines, style_select_function)
+            else:
+                raise ValueError('A valid decision function must be passed to select a style.')
+        elif self.overlap_filter_method == 'individual':
             if overlap_decision_function:
-                subtitle_lines = self._filter_overlapping_lines(subtitle_lines, overlap_decision_function)
+                subtitle_lines = self._filter_overlapping_lines_individual(subtitle_lines, overlap_decision_function)
             else:
                 raise ValueError('A valid decision function must be passed to filter overlapping lines.')
+        elif self.overlap_filter_method == 'duet':
+            if style_select_function:
+                duet_parts = self._separate_duet_parts(subtitle_lines, style_select_function)
+                # duet_parts may only contain one part. This happens if duet mode is selected but the subtitle file does
+                # not have multiple styles to split into duet parts. If this happens the song will be mapped as normal.
+                if len(duet_parts) == 1:
+                    self.overlap_filter_method = None  # Set to prevent the program attempting to map as a duet.
+                else:
+                    self._convert_lines(duet_parts[0], 'P1')
+                    self._convert_lines(duet_parts[1], 'P2')
+            else:
+                raise ValueError('A valid decision function must be passed to select a style.')
 
-        self._convert_lines(subtitle_lines)
+        # Duets are mapped before this line.
+        if self.overlap_filter_method != 'duet':
+            self._convert_lines(subtitle_lines)
 
         song_folder_name = self.ultrastar_song.meta_lines['ARTIST'] + ' - ' + self.ultrastar_song.meta_lines['TITLE']
         song_folder_name = re.sub(r'[^\w\-.() ]+', '', song_folder_name)
@@ -513,10 +668,28 @@ def main() -> None:
             if 0 <= selection < len(overlapping_lines):
                 return overlapping_lines[selection]
             else:
+                print('Please specify an integer in the correct range.')
+                continue
+
+    def cli_style_selection_function(styles: List[Tuple[str, int]]) -> str:
+        for i in range(0, len(styles)):
+            print('{0}.) {1} ({2} lines in this style)'.format(i, styles[i][0], styles[i][1]))
+
+        print('Select a style to DISCARD. All lines in this style will be discarded.')
+        while True:
+            try:
+                selection = int(input(':>'))
+            except ValueError:
                 print('Please specify a valid integer.')
                 continue
 
-    karaluxer_instance.run(cli_overlap_decision_function)
+            if 0 <= selection < len(styles):
+                return styles[selection][0]
+            else:
+                print('Please specify an integer in the correct range.')
+                continue
+
+    karaluxer_instance.run(cli_overlap_decision_function, cli_style_selection_function)
 
 
 if __name__ == '__main__':
