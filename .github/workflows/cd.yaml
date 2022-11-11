@@ -4,6 +4,7 @@ on: [push, workflow_dispatch]
 
 jobs:
   windows:
+    if: false
     runs-on: windows-latest
     steps:
       - uses: FedericoCarboni/setup-ffmpeg@v1
@@ -35,6 +36,7 @@ jobs:
 
 
   macos:
+    if: false
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v3
@@ -88,7 +90,7 @@ jobs:
           cd /opt/hostedtoolcache/Python/3.10.8/x64/lib/
           ls
           echo "----------------"
-          sudo find /Users/runner/hostedtoolcache/Python/3.10.8/x64 -type f -name "pitchnet_2020_12_14.onnx"
+          sudo find /opt/hostedtoolcache/Python/3.10.8/x64 -type f -name "pitchnet_2020_12_14.onnx"
 
       - name: Create bundle
         run: pyinstaller kl_gui.spec
