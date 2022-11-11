@@ -18,7 +18,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          (gc requirements.txt) -replace 'PyQt5-Qt5', 'PyQt5' | Out-File -encoding UTF8 requirements.txt
+          (gc requirements.txt) -replace 'PyQt5-Qt5==5.15.2', 'PyQt5' | Out-File -encoding UTF8 requirements.txt
           python -m pip install -r requirements.txt
 
       - name: Create bundle
