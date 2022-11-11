@@ -1,656 +1,696 @@
-from typing import List, Optional, Tuple, Union
+# Core Karaluxer functionality - CLI interface
+
+import shutil
+from typing import Callable, Dict, Optional, List, Tuple
 
 from pathlib import Path
-from datetime import datetime
 import sys
-import re
-import shutil
 import subprocess
-from math import ceil, floor
+import re
+import warnings
+import json
+import argparse
 
-from PyQt5 import QtCore
-from PyQt5.QtWidgets import (QApplication, QMessageBox, QGridLayout, QGroupBox, QLabel, QLineEdit, QPushButton,
-    QDialog, QFileDialog, QCheckBox, QVBoxLayout)
-
+import requests
 import ass
-from ass.line import _Event, Dialogue, Comment
+import ass.line
+import ultrastar_pitch
 
-import kara_api.kara_api as kapi
+from ultrastar.ultrastar import UltrastarSong
 
-# ----------------------------
-# Type Aliases
-# ----------------------------
-CommentList = List[_Event]
+# FFMPEG is used for converting Kara.moe media files to mp3. The script will first check if FFMPEG has been bundled with
+# it (through pyinstaller), secondly it will look for it in the "tools" folder and finally assume it is on PATH.
+if getattr(sys, '_MEIPASS', False):
+    FFMPEG_PATH = Path(getattr(sys, '_MEIPASS'), 'ffmpeg.exe')
+elif Path('tools', 'ffmpeg.exe').exists():
+    FFMPEG_PATH = Path('tools', 'ffmpeg.exe')
+else:
+    FFMPEG_PATH = 'ffmpeg'
 
-# ----------------------------
-# Regex
-# ----------------------------
+# Rather than estimate the BPM of each song, KaraLuxer uses a fixed BPM (specified here in Beats Per Second). Subtitle
+# files for karaoke specify timings in centiseconds, therefore to avoid rounding KaraLuxer uses 100 beats per second.
+# Using a fixed BPM, and a high one (6000 BPM) makes manual editing of the files produced by KaraLuxer harder.
+KARALUXER_BPS = 100
 
-# Regex to extract timing information from a line.
-TIMING_REGEX = re.compile(r'(\{\\(?:k|kf|ko|K)[0-9.]+\}[A-zÀ-ÿ _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})')
+# Regular expression to capture the timing/syllables from a line by stripping out the karaoke tags.
+# Note: Supports multiple tags on a syllable (such as color) but assumes that the karaoke timing will be the first tag.
+SYLLABLE_REGEX = re.compile(
+    r'(\{\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*\}[A-zÀ-ÿ _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})'
+)
 
-# Regex to check a kara.moe url is valid.
-KARA_URL_REGEX = re.compile(r'https:\/\/kara\.moe\/kara\/[\w-]+\/[\w-]+')
+# THe default pitch to assign to notes.
+DEFAULT_PITCH = 19
 
-# Regex to check if a character is valid to be used in a for Windows (10).
-VALID_FILENAME_REGEX = re.compile(r'[^\w\-.() ]+')
-
-# ----------------------------
-# Constants
-# ----------------------------
-VERSION = '2.0.0'  # KaraLuxer script version.
-
-OUTPUT_FOLDER = Path('./out')  # Directory where processed ultrastar songs are placed.
-TMP_FOLDER = Path('./tmp')  # Directory where Kara.moe files are downloaded to.
-NOTE_LINE = ': {start} {duration} {pitch} {sound}\n'  # Ultrastar format standard sung line.
-SEP_LINE = '- {}\n'  # Ultrastar format line seperator.
-PLAYER_LINE = 'P {}\n'  # Ultrastar format for Player.
-
-BEATS_PER_SECOND = 100  # Beats per second for the ultrastar map. Subfiles use centiseconds for timing.
-DEFAULT_PITCH = 19  # Default pitch to set notes to.
-
-FFMPEG_PATH = Path(getattr(sys, '_MEIPASS'), 'ffmpeg.exe') if getattr(sys, '_MEIPASS', False) else 'ffmpeg.exe'
-
-# ----------------------------
-# Program
-# ----------------------------
-
-def clean_line_text(line: _Event) -> str:
-    """Cleans all special data from the line text to get just the spoken Comment.
-
-    Args:
-        line (Comment): The Comment event to clean.
-
-    Returns:
-        str: A string of only the spoken Comment from the line.
-    """
-
-    return re.sub(r'\{(.*?)\}', '', line.text)
+# Version number used to tag and identify Karaluxer produced maps.
+KARALUXER_VERSION = '3.0.0'
 
 
-class OverlapSelectionWindow(QDialog):
-    """Window used to choose between overlapping lines."""
+class KaraLuxer():
+    """A KaraLuxer instance. Processes one song."""
 
-    def select_line_callback(self, line_index: int) -> None:
-        """Callback function connected to the line buttons. Used to set the selected line and close the window.
+    def __init__(
+        self,
+        kara_url: Optional[str] = None,
+        ass_file: Optional[str] = None,
+        cover_file: Optional[str] = None,
+        background_i_file: Optional[str] = None,
+        background_v_file: Optional[str] = None,
+        audio_file: Optional[str] = None,
+        overlap_filter_method: Optional[str] = None,
+        force_dialogue_lines: bool = False,
+        tv_sized: bool = False,
+        autopitch: bool = False
+    ) -> None:
+        """Sets up the KaraLuxer instance.
+
+        Files passed manually to the KaraLuxer instance as arguments will override the files from the kara.moe website.
+        Provided files (excluding the subtitle file) are not checked for the correct/valid extension.
 
         Args:
-            line_index (int): The index of the selected line in the self.lines list.
+            kara_url (Optional[str], optional): The kara.moe URL for the song. One of kara_url or ass_file must be
+                specified. Defaults to None.
+            ass_file (Optional[str], optional): The path to the subtitle file for the song. One of kara_url or ass_file
+                must be specified. Defaults to None.
+            cover_file (Optional[str], optional): The path to the cover image to use. Defaults to None.
+            background_i_file (Optional[str], optional): The path to the background image to use. Defaults to None.
+            background_v_file (Optional[str], optional): The path to the background video to use. Defaults to None.
+            audio_file (Optional[str], optional): The path to the audio to use. Defaults to None.
+            overlap_filter_method (Optional[str], optional): Sets the behaviour for how overlapping lines should be
+                handled. None will ignore overlaps, "style" will make the user select one subtitle style to keep,
+                "individual" will allow the user to select lines to discard individually, and "duet" will map the song
+                as a duet using the styles in the subtitle file.
+            force_dialogue_lines (bool, optional): If True only Dialogue lines will be parsed from the subtitle file.
+                Not recommended unless specifying a manual subtitle file.
+            tv_sized (bool, optional): If True will append (TV) to the song title. (This is the convention that
+                ultrastar.es uses).
+            autopitch (bool, optional): If True Karaluxer will attempt to use ultrastar_pitch to pitch the notes.
         """
 
-        self.selected_line = self.lines[line_index]
-        self.close()
+        # One of kara_url or ass_file must be passed to the Karaluxer instance.
+        if not kara_url and not ass_file:
+            raise ValueError('One of kara_url or ass_file must be passed to the KaraLuxer instance.')
 
-    def __init__(self, overlapping_lines: CommentList) -> None:
-        """Constructor for the OverlapSelectionWindow.
+        self.kara_url = kara_url
+        self.files = {
+            'subtitles': Path(ass_file) if ass_file else None,
+            'audio': Path(audio_file) if audio_file else None,
+            'background_image': Path(background_i_file) if background_i_file else None,
+            'background_video': Path(background_v_file) if background_v_file else None,
+            'cover': Path(cover_file) if cover_file else None
+        }
+        self.overlap_filter_method = overlap_filter_method
+        self.force_dialogue_lines = force_dialogue_lines
+        self.tv_sized = tv_sized
+        self.autopitch = autopitch
 
-        Args:
-            overlapping_lines (CommentList): A list containing all the overlapping Comment events.
-        """
-        super().__init__()
+        # Parameter checks
+        if kara_url and not re.match(r'https:\/\/kara\.moe\/kara\/[\w-]+\/[\w-]+', kara_url):
+            raise ValueError('Invalid kara.moe URL.')
 
-        # Line data
-        self.lines = overlapping_lines
-        self.selected_line = None
+        if self.files['subtitles']:
+            if self.files['subtitles'].suffix != '.ass':
+                raise ValueError('Subtitle file must be a .ass file.')
+            if not self.files['subtitles'].exists():
+                raise IOError('Subtitle file not found.')
 
-        # Window settings and Flags
-        self.setWindowTitle('Choose a line to discard')
-        self.setGeometry(20, 20, 600, 200)
-        self.setWindowFlag(QtCore.Qt.WindowCloseButtonHint, False)
+        if self.files['audio'] and not self.files['audio'].exists():
+            raise IOError('Audio file not found.')
 
-        # Window layout
-        window_layout = QGridLayout()
-        self.setLayout(window_layout)
+        if self.files['background_image'] and not self.files['background_image'].exists():
+            raise IOError('Background image not found.')
 
-        # Information
-        info_label = QLabel('The following lines overlap, please select one to DISCARD.')
-        window_layout.addWidget(info_label, 0, 0)
+        if self.files['background_video'] and not self.files['background_video'].exists():
+            raise IOError('Background video not found.')
 
-        # Lines
-        for i in range(0, len(self.lines)):
-            current_line = self.lines[i]
-            button_string = 'Time = {0} | Style = \"{1}\" | Text = {2}'.format(
-                current_line.start,
-                current_line.style,
-                clean_line_text(current_line)
-                )
-            line_button = QPushButton(button_string)
-            line_button.clicked.connect(lambda _, x=i: self.select_line_callback(x))
-            window_layout.addWidget(line_button)
+        if self.files['cover'] and not self.files['cover'].exists():
+            raise IOError('Cover image not found.')
 
+        if overlap_filter_method not in [None, 'style', 'individual', 'duet']:
+            raise ValueError(
+                'If specifying an overlap filter method it must be one of "individual", "style" or "duet".'
+            )
 
-class KaraLuxer(QDialog):
-    """Main KaraLuxer window."""
+        self.ultrastar_song = UltrastarSong(KARALUXER_BPS * 60)
 
-    # Message severity levels
-    LVL_ERROR = 2
-    LVL_WARNING = 1
-    LVL_INFO = 0
+    def _load_subtitle_lines(self) -> List[ass.line._Event]:
+        """Load, sort and filter the lines from the subtitle file. THis method must be run after a subtitle file has
+           been provided, either manually or by downloading from Kara.
 
-    def get_file(self, target: QLineEdit, filter: str) -> None:
-        """Method to get the path to a file and update a target to hold the filepath.
-
-        Args:
-            target (QLineEdit): The target widget to update.
-            filter (str): The filter to use for the file picker.
+        Returns:
+            List[ass.line._Event]: A list of all the lines in the subtitle file, sorted by their stating time.
         """
 
-        file_Comment = QFileDialog()
-        file_Comment.setFileMode(QFileDialog.ExistingFile)
-        file_Comment.setNameFilter(filter)
+        if not self.files['subtitles']:
+            raise ValueError('Subtitle file has not been provided.')
 
-        if file_Comment.exec_() == QDialog.Accepted:
-            target.setText(file_Comment.selectedFiles()[0])
+        with open(self.files['subtitles'], encoding='utf-8-sig') as f:
+            subtitle_data = ass.parse(f)
 
-    def __init__(self) -> None:
-        """Constructor for the KaraLuxer window."""
-        super().__init__()
+        # Using Comment lines instead of dialogue from Kara produces better results. However some songs, such as
+        # https://kara.moe/kara/rock-over-japan/68a57800-9b23-4c62-bcc8-a77fb103b798 only have Dialogue lines, so they
+        # are used if no Comments are found. Manually provided subtitle files might work better when using Dialogue, so
+        # the force_dialogue_lines option can be used to force the use of Dialogue lines.
+        comments = [event for event in subtitle_data.events if isinstance(event, ass.line.Comment)]
+        dialogue = [event for event in subtitle_data.events if isinstance(event, ass.line.Dialogue)]
 
-        self.setWindowTitle('KaraLuxer')
-        self.setGeometry(20, 20, 600, 800)
-
-        self.process_thread = None
-
-        # ----------------------------------------------------
-        # Essential Arguments group
-        # ----------------------------------------------------
-        self.essential_args_group = QGroupBox('Essential Parameters')
-        essential_args_layout = QGridLayout()
-
-        self.kara_url_input = QLineEdit()
-        essential_args_layout.addWidget(QLabel('Kara.moe URL:'), 0, 0)
-        essential_args_layout.addWidget(self.kara_url_input, 0, 1)
-
-        self.cover_input = QLineEdit()
-        essential_args_layout.addWidget(QLabel('Cover Image:'), 1, 0)
-        essential_args_layout.addWidget(self.cover_input, 1, 1)
-        cover_button = QPushButton('Browse')
-        cover_button.clicked.connect(lambda: self.get_file(self.cover_input, "Image files (*.jpg *.jpeg *.png)"))
-        essential_args_layout.addWidget(cover_button, 1, 2)
-
-        self.essential_args_group.setLayout(essential_args_layout)
-
-        # ----------------------------------------------------
-        # Optional Arguments group
-        # ----------------------------------------------------
-        self.optional_args_group = QGroupBox('Optional Parameters')
-        optional_args_layout = QGridLayout()
-        optional_args_layout.setColumnStretch(0, 1)
-        optional_args_layout.setColumnStretch(1, 2)
-        optional_args_layout.setColumnStretch(2, 1)
-
-        self.bg_input = QLineEdit()
-        self.bg_input.setPlaceholderText('Only visible if no background video is available.')
-        optional_args_layout.addWidget(QLabel('Background Image:'), 0, 0)
-        optional_args_layout.addWidget(self.bg_input, 0, 1)
-        bg_button = QPushButton('Browse')
-        bg_button.clicked.connect(lambda: self.get_file(self.bg_input, "Image files (*.jpg *.jpeg *.png)"))
-        optional_args_layout.addWidget(bg_button, 0, 2)
-
-        self.bgv_input = QLineEdit()
-        self.bgv_input.setPlaceholderText('Replaces the kara.moe video.')
-        optional_args_layout.addWidget(QLabel('Background Video:'), 1, 0)
-        optional_args_layout.addWidget(self.bgv_input, 1, 1)
-        bgv_button = QPushButton('Browse')
-        bgv_button.clicked.connect(lambda: self.get_file(self.bgv_input, "Mp4 files (*.mp4)"))
-        optional_args_layout.addWidget(bgv_button, 1, 2)
-
-        self.creator_input = QLineEdit()
-        optional_args_layout.addWidget(QLabel('Creator:'), 2, 0)
-        optional_args_layout.addWidget(self.creator_input, 2, 1)
-        optional_args_layout.addWidget(QLabel('(Appended to the Kara.moe map creator)'), 2, 2)
-
-        self.tv_checkbox = QCheckBox()
-        optional_args_layout.addWidget(QLabel('TV Sized:'), 3, 0)
-        optional_args_layout.addWidget(self.tv_checkbox, 3, 1)
-        optional_args_layout.addWidget(QLabel('(Will add "(TV)" to the song title)'), 3, 2)
-        
-        self.overlap_checkbox = QCheckBox()
-        optional_args_layout.addWidget(QLabel('Skip overlaps:'), 4, 0)
-        optional_args_layout.addWidget(self.overlap_checkbox, 4, 1)
-        optional_args_layout.addWidget(QLabel('([Advanced] For manual overlap handling)'), 4, 2)
-
-        self.optional_args_group.setLayout(optional_args_layout)
-
-        # ----------------------------------------------------
-        # Run Button
-        # ----------------------------------------------------
-
-        run_button = QPushButton('Run')
-        run_button.clicked.connect(self.run)
-
-        # ----------------------------------------------------
-        # Output
-        # ----------------------------------------------------
-
-        self.output_group = QGroupBox('Program Output')
-        output_layout = QGridLayout()
-
-        self.output_text = QLabel('Not Running')
-        output_layout.addWidget(self.output_text)
-
-        self.output_group.setLayout(output_layout)
-
-        # ----------------------------------------------------
-        # Base Window
-        # ----------------------------------------------------
-        window_layout = QVBoxLayout()
-        window_layout.addWidget(self.essential_args_group)
-        window_layout.addWidget(self.optional_args_group)
-        window_layout.addWidget(run_button)
-        window_layout.addWidget(self.output_group)
-
-        window_layout.addStretch(3)
-
-        self.setLayout(window_layout)
-
-    def display_message(self, level: int, message: str):
-        """Displays an Info, Warning or Error message.
-
-        Args:
-            level (int): The level of the message, should be a constant prefixed LVL_
-            message (str): The message to display.
-        """
-
-        message_window = QMessageBox()
-        if level == self.LVL_INFO:
-            message_window.setIcon(QMessageBox.Information)
-            message_window.setWindowTitle('Info')
-        elif level == self.LVL_WARNING:
-            message_window.setIcon(QMessageBox.Warning)
-            message_window.setWindowTitle('Warning')
+        if not comments or self.force_dialogue_lines:
+            relevant_lines = dialogue
         else:
-            message_window.setIcon(QMessageBox.Critical)
-            message_window.setWindowTitle('Error')
+            relevant_lines = comments
 
-        message_window.setText(message)
-        message_window.exec()
+        # Lines in the subtitle file are parsed in order of appearance, but this may differ from the order they occur
+        # in.
+        relevant_lines.sort(key=lambda l: l.start)
 
-    def get_sub_lines(self, sub_file: Path) -> Tuple[dict[str,list[Comment]], list[str]]:
-        """Gets all the Comment events from a given subtitle file.
+        return relevant_lines
 
-        Args:
-            sub_file (Path): The path to the subtitle file.
-
-        Returns:
-            Tuple
-                Dict[string,List[ass.Comment]]: A dictionary containing keyvaluepairs of styles and all the Comment events from the subtitle file, ordered by their starting time.
-                list[str]: A list of unique styles.
-        """
-
-        with open(sub_file, 'r', encoding='utf-8-sig') as f:
-            sub_data = ass.parse(f)
-
-        line_list_per_style = {}
-        unique_styles_in_text = set(self.uniqueStyles(sub_data.events))
-        unique_styles_in_styles = set(o.name for o in sub_data.styles)
-        unique_styles = list(set(unique_styles_in_text).intersection(unique_styles_in_styles))
-        for style in unique_styles:
-            all_items = list(filter(lambda event: event.style == style, sub_data.events))
-            all_items.sort(key=lambda line: line.start)
-            line_list_per_style[style] = [event for event in all_items if isinstance(event, Comment)]
-            # In the special case where comments are not used:
-            # e.g https://kara.moe/kara/rock-over-japan/68a57800-9b23-4c62-bcc8-a77fb103b798
-            # The Dialogue is used.
-            if not line_list_per_style[style]:
-                line_list_per_style[style] = [event for event in all_items if isinstance(event, Dialogue)]
-
-        return line_list_per_style, unique_styles
-
-    def filter_overlaping_lines(self, lines: list[Comment]) -> dict[str,List[Comment]]:
-        """Filters the Comment events to remove any overlapping lines.
+    def _get_styles_in_lines(self, lines: List[ass.line._Event]) -> List[Tuple[str, int]]:
+        """Finds all unique styles in a set of lines, as well as how many lines correspond to that style.
 
         Args:
-            lines (list[Comment]): The list of all Comment events in the subtitle file in the same style.
+            lines (List[ass.line._Event]): The list of lines to search for styles.
 
         Returns:
-            dict[str,list[Comment]]: A filtered list of non-overlapping Comment events within a dictionary.
+            List[Tuple[str, int]]: The list of styles found, along with how many lines in that style exist.
         """
 
-        overlap_found = True
+        styles = {}
+        for line in lines:
+            line_count = styles.setdefault(line.style, 0)
+            styles[line.style] = line_count + 1
 
-        while overlap_found:
-            overlap_found = False
+        return list(styles.items())
 
-            remove_line = None
+    def _get_lines_in_style(self, style: str, lines: List[ass.line._Event]) -> List[ass.line._Event]:
+        """Filters a list of lines to keep only those in a certain style.
+
+        Args:
+            style (str): The style to filter by.
+            lines (List[ass.line._Event]): The list of lines to filter.
+
+        Returns:
+            List[ass.line._Event]: Lines with the correct style.
+        """
+
+        return list(filter(lambda l: l.style == style, lines))
+
+    def _filter_overlapping_lines_style(
+        self,
+        lines: List[ass.line._Event],
+        style_selection_function: Callable[[List[Tuple[str, int]]], str]
+    ) -> List[ass.line._Event]:
+        """Filters lines by removing any lines that are not in a selected style. Uses a user provided function to
+        discard styles until there is only one remaining.
+
+        Does not guarantee that there are no overlaps remaining within the selected style.
+
+        Args:
+            lines (List[ass.line._Event]): The list of lines to filter.
+            style_selection_function (Callable[[List[Tuple[str, int]]], str]): The function that will be used to discard
+                styles. It should return the name of the style to discard.
+
+        Returns:
+            List[ass.line._Event]: The filtered list of lines that match the selected style.
+        """
+
+        styles = self._get_styles_in_lines(lines)
+
+        # If there is only one style then no filtering needs to be done. There may still be overlaps within an
+        # individual style but these will be ignored.
+        if len(styles) == 1:
+            warnings.warn(
+                'Style mode has been used for overlap filtering, but there is only one style. Overlaps will be ignored.'
+            )
+            return lines
+
+        # Prompt user to discard styles until there is only one.
+        while (len(styles) > 1):
+            selected_style = style_selection_function(styles)
+            styles = [style for style in styles if style[0] != selected_style]
+
+        return self._get_lines_in_style(styles[0][0], lines)
+
+    def _filter_overlapping_lines_individual(
+        self,
+        lines: List[ass.line._Event],
+        decision_function: Callable[[List[ass.line._Event]], ass.line._Event]
+    ) -> List[ass.line._Event]:
+        """Filters lines that overlap. Uses a user provided decision function to decide between lines.
+
+        Args:
+            lines (List[ass.line._Event]): The list of lines to filter.
+            decision_function (Callable[[List[ass.line._Event]], int]): The function that will be used to select between
+                overlapping lines. It should return the line to remove.
+
+        Returns:
+            List[ass.line._Event]: The filtered list of lines, with no overlaps remaining.
+        """
+
+        overlap_exists = True
+        while overlap_exists:
+            overlap_exists = False
 
             for i in range(0, len(lines)):
                 current_line = lines[i]
-
-                current_line_end_beat = floor(current_line.end.total_seconds() * BEATS_PER_SECOND)
-
                 overlap_group = [current_line]
 
-                # Find any lines that overlap with the current one.
                 for j in range(i + 1, len(lines)):
                     selected_line = lines[j]
-                    selected_line_start_beat = ceil(selected_line.start.total_seconds() * BEATS_PER_SECOND)
-                    if selected_line_start_beat < current_line_end_beat:
+                    if current_line.end > selected_line.start:
                         overlap_group.append(selected_line)
-
+                    else:
+                        break
 
                 if len(overlap_group) > 1:
-                    overlap_found = True
-                    # The user must select one of the overlapping lines to keep.
-                    selection_window = OverlapSelectionWindow(overlap_group)
-                    selection_window.exec()
+                    overlap_exists = True
 
-                    remove_line = selection_window.selected_line
+                    # Use the provided decision function to decide which line to remove.
+                    discarded_line = decision_function(overlap_group)
+                    lines.remove(discarded_line)
                     break
 
-            if remove_line:
-                lines.remove(remove_line)
+        return lines
 
-        return { 
-            current_line.style : lines
-        }
-
-    def uniqueStyles(self, theList: list[Comment]) -> list[str]:
-        """Produces a list of unique styles found from the subtitle lines.
-
-        Args:
-            theList (list[Comment])
-
-        Returns:
-            List[str]: A unique list of styles.
-        """
-
-        # initialize a null list
-        unique_list = []
-    
-        # traverse for all elements
-        for x in theList:
-            # check if exists in unique_list or not
-            if x.style not in unique_list:
-                unique_list.append(x.style)
-
-        return unique_list
-
-    def build_note_section(self, sub_file: Path, skip_overlaps: bool) -> str:
-        """Produces the notes section of the Ultrastar song from the subtitle lines.
+    def _separate_duet_parts(
+        self,
+        lines: List[ass.line._Event],
+        style_selection_function: Callable[[List[Tuple[str, int]]], str]
+    ) -> Tuple[List[ass.line._Event], ...]:
+        """Separates lines into two duet parts based on their style. Uses a user provided function to
+        discard styles until there is only two remaining.
 
         Args:
-            sub_file (Path): The path to the subtitle file.
-            skip_overlaps (bool): If true, skips the call to filter overlapping lines.
+            lines (List[ass.line._Event]): The lines to separate.
+            style_selection_function (Callable[[List[Tuple[str, int]]], str]): The function that will be used to discard
+            styles. It should return the name of the style to discard.
 
         Returns:
-            str: The note section of the Ultrastar song.
+            Tuple[List[ass.line._Event], ...]: The parts of the duet. Tuple will have a length of 1 if the subtitles did
+                not contain more than one style, otherwise it will have a length of 2.
         """
 
-        note_section = ''
+        styles = self._get_styles_in_lines(lines)
 
-        # Get subtitle data
-        lines, players = self.get_sub_lines(sub_file)
+        # If there is only one style then a duet can not be produced, instead the song will be mapped as normal.
+        if len(styles) == 1:
+            warnings.warn(
+                'Duet mode has been used but there is only one style. Song will be mapped as normal;.'
+            )
+            return (lines,)
 
-        # Determine if we're dealing with a duet song or not.
-        if len(players) > 1 and len(players) <= 3:
-            # do not skip overlaps
-            filtered_lines = lines
-        else:
-            # Filter Comment to remove overlapping lines, but only when skip_overlaps is false
-            filtered_lines = self.filter_overlaping_lines(list(lines.items())[0][1]) if not skip_overlaps else lines
+        # Prompt user to discard styles until there is only two.
+        while (len(styles) > 2):
+            selected_style = style_selection_function(styles)
+            styles = [style for style in styles if style[0] != selected_style]
 
-        # Produce Ultrastar notes.
-        counter = 0
-        for _,line_list in filtered_lines.items():
-            if len(filtered_lines.items()) > 1 and counter <= 3:
-                note_section += PLAYER_LINE.format(counter + 1)
-                counter += 1
-            for line in line_list:
-                # Get the starting beat for this line.
-                current_beat = round(line.start.total_seconds() * BEATS_PER_SECOND)
+        # Add metadata tags to the ultrastar file that name the duet sections according to their style.
+        self.ultrastar_song.add_metadata('#DUETSINGERP1', styles[0][0])
+        self.ultrastar_song.add_metadata('#DUETSINGERP2', styles[1][0])
 
-                # Get all syllable/timing pairs from the line.
-                syllables: List[Tuple[int, Optional[str]]] = []
-                for sound_pair, timing_pair in re.findall(TIMING_REGEX, line.text):
-                    if sound_pair:
-                        timing, sound = sound_pair.split('}')
-                    elif timing_pair:
-                        timing = timing_pair.split('\\')[1]
-                        sound = None
-                    else:
-                        warning_text = 'Found something unexpected in line: \"{}\"'.format(clean_line_text(line))
-                        self.display_message(self.LVL_WARNING, warning_text)
-                        continue
+        p1_lines = self._get_lines_in_style(styles[0][0], lines)
+        p2_lines = self._get_lines_in_style(styles[1][0], lines)
 
-                    timing = re.sub(r'[^0-9.]', '', timing)
-                    syllables.append((round(float(timing)), sound))
+        return (p1_lines, p2_lines)
 
-                # Write out line for the Ultrastar format
-                for duration, sound in syllables:
-                    # Timing pairs without sound simply increment the current beat counter.
-                    if not sound:
-                        current_beat += duration
-                        continue
+    def _convert_lines(self, lines: List[ass.line._Event], duet_part: str = 'P1') -> None:
+        """Convert the subtitle lines to notes for the ultrastar song.
 
-                    # Subtitle files will provide the duration of a note in centiseconds, this needs to be converted into
-                    # beats for the Ultrastar format.
-                    converted_duration = round((duration / 100) * BEATS_PER_SECOND)
+        Args:
+            lines (List[ass.line._Event]): The subtitle lines to parse.
+            duet_part (str, optional): The duet part that lines should be assigned to. Defaults to P1. A song will only
+                be mapped as a duet if at least 1 line with duet_part/player "P2" exists.
+        """
+
+        for line in lines:
+            current_beat = round(line.start.total_seconds() * KARALUXER_BPS)
+
+            # Get all syllables and their durations from the line.
+            syllables = []
+            for sound_pair, timing_pair in re.findall(SYLLABLE_REGEX, line.text):
+                if sound_pair:
+                    timing, syllable_text = sound_pair.split('}')
+                    # Timing string might contain additional tags besides just the karaoke timings
+                    # (e.g. {\k23\2c&H3AE2FA&}). They are filtered out here to keep only the first tag (this will cause
+                    # issues if the first tag is not the karaoke timings).
+                    timing = re.sub(r'(?<!{)\\[\0-9A-z&]*', '', timing)
+                elif timing_pair:
+                    timing = timing_pair.split('\\')[1]
+                    syllable_text = None
+                else:
+                    clean_line = re.sub(r'\{(.*?)\}', '', line.text)
+                    warnings.warn('Found something unexpected in line: "{0}"'.format(clean_line))
+                    continue
+
+                timing = re.sub(r'[^0-9.]', '', timing)
+                syllables.append((round(float(timing)), syllable_text))
+
+            for duration, syllable_text in syllables:
+                # Subtitle files will provide the duration of a note in centiseconds, this needs to be converted into
+                # beats for the Ultrastar format.
+                converted_duration = round((duration / 100) * KARALUXER_BPS)
+
+                # Karaoke subtitles can have timings without a corresponding sound, these simply increment the beat.
+                if not syllable_text:
+                    current_beat += converted_duration
+                    continue
 
                     # Notes should be slightly shorter than their original duration, to make it easier to sing.
                     # Currently this is done by simply reducing the duration by one. This could use improvement.
                     tweaked_duration = converted_duration - 1 if converted_duration > 1 else converted_duration
 
-                    # Write note line
-                    note_section += NOTE_LINE.format(
-                        start=current_beat,
-                        duration=tweaked_duration,
-                        pitch=DEFAULT_PITCH,
-                        sound=sound
-                    )
+                self.ultrastar_song.add_note(
+                    ':',
+                    current_beat,
+                    tweaked_duration,
+                    DEFAULT_PITCH,
+                    syllable_text,
+                    duet_part
+                )
 
-                    # Increment current beat by the non-tweaked duration.
-                    current_beat += converted_duration
+                current_beat += converted_duration
 
-                # Write end of line separator.
-                note_section += SEP_LINE.format(current_beat)
+            # Write a linebreak at the end of the line.
+            self.ultrastar_song.add_note('-', current_beat)
 
-        return note_section
+    def _fetch_kara_data(self, kara_id: str) -> Dict[str, str]:
+        """Fetches relevant data about a map using the Kara api.
 
-    def check_parameters(self) -> bool:
-        # Check the kara.moe url is valid.
-        if not re.match(KARA_URL_REGEX, self.kara_url_input.text()):
-            self.display_message(self.LVL_ERROR, 'Provided Kara.moe url is invalid.')
-            return False
+        Args:
+            kara_id (str): The ID of the kara.
 
-        # Check cover image.
-        if self.cover_input.text():
-            cover_path = Path(self.cover_input.text())
+        Returns:
+            Dict[str, str]: Data about the kara that is relevant to the conversion process.
+        """
 
-            if not cover_path.exists():
-                self.display_message(self.LVL_ERROR, 'The specified cover image file can not be found!')
-                return False
-            elif cover_path.suffix not in ['.jpg', '.jpeg', '.png']:
-                self.display_message(self.LVL_ERROR, 'The specified cover image is not an image!')
-                return False
-        else:
-            self.display_message(self.LVL_ERROR, 'Please specify a cover image!')
-            return False
+        response = requests.get('https://kara.moe/api/karas/' + kara_id)
+        if response.status_code != 200:
+            raise ValueError('Unexpected response from kara.')
 
-        # Check background image.
-        if self.bg_input.text():
-            bg_path = Path(self.bg_input.text())
+        data = json.loads(response.content)
 
-            if not bg_path.exists():
-                self.display_message(self.LVL_ERROR, 'The specified background image file can not be found!')
-                return False
-            elif bg_path.suffix not in ['.jpg', '.jpeg', '.png']:
-                self.display_message(self.LVL_ERROR, 'The specified background image is not an image!')
-                return False
+        kara_data = {
+            'title': data['titles'][data['titles_default_language']],
+            'sub_file': data['subfile'],
+            'media_file': data['mediafile'],
+            'language': data['langs'][0]['i18n']['eng']
+        }
 
-        # Check background video.
-        if self.bgv_input.text():
-            bgv_path = Path(self.bgv_input.text())
+        # Get song artists. Prioritizes "singergroups" (band) field when present.
+        artist_data = data['singergroups'] if data['singergroups'] else data['singers']
+        artists = ''
+        for singer in artist_data:
+            artists += singer['name'] + ' & '
+        kara_data['artists'] = artists[:-3]
 
-            if not bgv_path.exists():
-                self.display_message(self.LVL_ERROR, 'The specified background video file can not be found!')
-                return False
-            elif bgv_path.suffix != '.mp4':
-                self.display_message(self.LVL_ERROR, 'The specified background video is not a video!')
-                return False
+        # Get map authors
+        authors = ''
+        for author in data['authors']:
+            authors += author['name'] + ' & '
+        kara_data['authors'] = authors[:-3]
 
-        return True
+        return kara_data
 
-    def run(self) -> None:
-        """Produces the Ultrastar map from the provided data."""
+    def _fetch_kara_file(self, filename: str, download_directory: Path) -> None:
+        """Fetches a file from the Kara servers and places it in the specified directory.
 
-        # Check all the parameters are valid.
-        if not self.check_parameters():
+        Args:
+            filename (str): The name of the file to fetch.
+            download_directory (Path): The directory to save the file to.
+        """
+
+        if download_directory.joinpath(filename).exists():
             return
 
-        # Get data from the input
-        kara_url = self.kara_url_input.text()
-        cover_file = self.cover_input.text()
-        bg_file = self.bg_input.text()
-        bgv_file = self.bgv_input.text()
-        tv_size = self.tv_checkbox.isChecked()
-        overlap_skip = self.overlap_checkbox.isChecked()
-        extra_creator = self.creator_input.text()
+        file_path = Path(filename)
 
-        """"""
-        # --------------------------
-        # Pull data from kara.moe
-        # --------------------------
-
-        # Get kara id from the url.
-        kara_id = kara_url.split('/')[-1]
-
-        # Create/Clear tmp folder for downloading.
-        tmp_data = TMP_FOLDER.joinpath(kara_id)
-        if tmp_data.exists():
-            shutil.rmtree(tmp_data)
-        tmp_data.mkdir(parents=True, exist_ok=False)
-
-        # Download data from kara.
-        self.output_text.setText('Getting data from kara.')
-        kara_data = kapi.get_kara_data(kara_id)
-
-        self.output_text.setText('Downloading subtitles.')
-        kapi.get_sub_file(kara_data['sub_file'], tmp_data)
-
-        self.output_text.setText('Downloading media.')
-        kapi.get_media_file(kara_data['media_file'], tmp_data)
-
-        # --------------------------
-        # Load data
-        # --------------------------
-
-        subtitle_path = Path(tmp_data.joinpath(kara_data['sub_file']))
-        media_path = Path(tmp_data.joinpath(kara_data['media_file']))
-
-        # Convert the media to mp3 if it is a video.
-        if media_path.suffix != '.mp3':
-            self.output_text.setText('Converting media to mp3 using ffmpeg.')
-            audio_path = tmp_data.joinpath('{0}.mp3'.format(media_path.stem))
-            # Convert to mp3 using ffmpeg
-            ret_val = subprocess.call([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
-
-            if ret_val:
-                self.display_message(self.LVL_ERROR, 'Could not convert media to mp3!')
-                return
-
-            if not bgv_file:
-                bgv_file = media_path
+        if file_path.suffix == '.ass':
+            response = requests.get('https://kara.moe/downloads/lyrics/' + filename)
         else:
-            audio_path = media_path
+            response = requests.get('https://kara.moe/downloads/medias/' + filename)
 
-        cover_path = Path(cover_file) if cover_file else None
-        bg_path = Path(bg_file) if bg_file else None
-        bgv_path = Path(bgv_file) if bgv_file else None
+        if response.status_code != 200:
+            raise ValueError('Unexpected response from kara.')
 
-        self.output_text.setText('Mapping song.')
+        with open(download_directory.joinpath(filename), 'wb') as f:
+            f.write(response.content)
 
-        # Create output folder
-        title_string = kara_data['title'] + (' (TV)' if tv_size else '')
-        base_name = '{0} - {1}'.format(kara_data['artists'], title_string)
-        sanitized_base_name = re.sub(VALID_FILENAME_REGEX, '', base_name)
-        sanitized_base_name = sanitized_base_name.strip()
-        song_folder = OUTPUT_FOLDER.joinpath(sanitized_base_name)
-        if song_folder.exists():
-            self.display_message(self.LVL_WARNING, 'Overwriting existing song.')
-            shutil.rmtree(song_folder)
+    def _autopitch(self, song_folder: Path) -> None:
+        """Pitches the ultrastar file using the ultrastar_pitch utility.
+
+        Args:
+            song_folder (Path): The path to the folder containing all the song files.
+        """
+
+        notes_file = song_folder.joinpath(song_folder.name + '.txt')
+        pitched_file = song_folder.joinpath('pitched.txt')
+
+        pitch_pipeline = ultrastar_pitch.DetectionPipeline(
+            ultrastar_pitch.ProjectParser(),
+            ultrastar_pitch.AudioPreprocessor(stride=128),
+            ultrastar_pitch.PitchClassifier(),
+            ultrastar_pitch.StochasticPostprocessor()
+        )
+
+        pitch_pipeline.transform(str(notes_file), str(pitched_file), True)
+
+        notes_file.unlink()
+        pitched_file.rename(notes_file)
+
+    def run(
+        self,
+        overlap_decision_function: Optional[Callable[[List[ass.line._Event]], ass.line._Event]] = None,
+        style_select_function: Optional[Callable[[List[Tuple[str, int]]], str]] = None
+    ) -> None:
+        """Runs this Karaluxer instance to produce the ultrastar song.
+
+        Args:
+            overlap_decision_function (Optional[Callable[[List[ass.line._Event]], ass.line._Event]], optional):
+                The decision function to use when selecting overlapping lines. Must be specified if
+                self.overlap_filter_method is "individual".
+            style_select_function (Optional[Callable[[List[Tuple[str, int]]], str]], optional):
+                The decision function to use when selecting a style to discard. Must be specified if
+                self.overlap_filter_method is "duet" or "style".
+        """
+
+        if self.kara_url:
+            kara_id = self.kara_url.split('/')[-1]
+            kara_data = self._fetch_kara_data(kara_id)
+
+            self.ultrastar_song.add_metadata('TITLE', kara_data['title'] +  (' (TV)' if self.tv_sized else ''))
+            self.ultrastar_song.add_metadata('ARTIST', kara_data['artists'])
+            self.ultrastar_song.add_metadata('CREATOR', kara_data['authors'])
+            self.ultrastar_song.add_metadata('LANGUAGE', kara_data['language'])
+
+            temporary_folder = Path('tmp')
+
+            download_directory = temporary_folder.joinpath(kara_id)
+            download_directory.mkdir(parents=True, exist_ok=True)
+
+            if not self.files['subtitles']:
+                self._fetch_kara_file(kara_data['sub_file'], download_directory)
+                self.files['subtitles'] = download_directory.joinpath(kara_data['sub_file'])
+
+            if not self.files['audio']:
+                self._fetch_kara_file(kara_data['media_file'], download_directory)
+                media_path = download_directory.joinpath(kara_data['media_file'])
+
+                # Some songs on Kara have an mp3 as the media file. In the case where the media is not in mp3 form, it
+                # will be converted to mp3 using ffmpeg.
+                if media_path.suffix != '.mp3':
+                    if not self.files['background_video']:
+                        self.files['background_video'] = media_path
+
+                    audio_path = download_directory.joinpath(media_path.stem + '.mp3')
+
+                    ret_val = subprocess.call([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
+                    if ret_val:
+                        raise IOError('Could not convert media to mp3 with FFMPEG.')
+
+                    self.files['audio'] = audio_path
+                else:
+                    self.files['audio'] = media_path
+
+            # Fetch the background video if it wasn't already downloaded for the audio. Used when a user specifies an
+            # audio file manually.
+            if not self.files['background_video']:
+                self._fetch_kara_file(kara_data['media_file'], download_directory)
+                media_path = download_directory.joinpath(kara_data['media_file'])
+
+                if media_path.suffix != '.mp3':
+                    if not self.files['background_video']:
+                        self.files['background_video'] = media_path
+
+        else:
+            # Add default meta tags if Kara.moe is not used. These will need to be edited by hand in the produced
+            # text file.
+            self.ultrastar_song.add_metadata('TITLE', 'Song Title')
+            self.ultrastar_song.add_metadata('ARTIST', 'Song Artist')
+            self.ultrastar_song.add_metadata('CREATOR', 'Map Creator')
+            self.ultrastar_song.add_metadata('LANGUAGE', 'Map Creator')
+
+        # This tag is not recognized or used by any karaoke programs, it is added by Karaluxer to help identify which
+        # maps have been produced using this script.
+        self.ultrastar_song.add_metadata('KARALUXERVERSION', KARALUXER_VERSION)
+
+        # Like the KARALUXERVERSION tag, this tag is not recognized by karaoke programs, it is used to identify the
+        # original source of the map.
+        if self.kara_url:
+            self.ultrastar_song.add_metadata('KARAID', kara_id)
+
+        self.ultrastar_song.add_metadata('GAP', '0')
+
+        # The BPM of the song needs to be 1/4 of the actual BPS used in mapping. I'm not sure why.
+        self.ultrastar_song.add_metadata('BPM', str((KARALUXER_BPS * 60) / 4))
+
+        subtitle_lines = self._load_subtitle_lines()
+
+        # Overlaps in the subtitles are handled in one of four ways:
+        #   If self.overlap_filter_method is None, overlaps will be ignored and left in the ultrastar file.
+        #   If self.overlap_filter_method is "style", users will be prompted to styles to discard until only one style
+        #       remains, any lines not in that style will be discarded.
+        #   If self.overlap_filter_method is "individual", users will discard overlapping lines by selecting lines
+        #       individually whenever there is a set of overlaps.
+        #   If self.overlap_filter_method is "duet", users will be asked to discard any styles in the subtitle file
+        #       until there is exactly 2 styles left, these will then be mapped individually to produce the duet parts.
+        if self.overlap_filter_method == 'style':
+            if style_select_function:
+                subtitle_lines = self._filter_overlapping_lines_style(subtitle_lines, style_select_function)
+            else:
+                raise ValueError('A valid decision function must be passed to select a style.')
+        elif self.overlap_filter_method == 'individual':
+            if overlap_decision_function:
+                subtitle_lines = self._filter_overlapping_lines_individual(subtitle_lines, overlap_decision_function)
+            else:
+                raise ValueError('A valid decision function must be passed to filter overlapping lines.')
+        elif self.overlap_filter_method == 'duet':
+            if style_select_function:
+                duet_parts = self._separate_duet_parts(subtitle_lines, style_select_function)
+                # duet_parts may only contain one part. This happens if duet mode is selected but the subtitle file does
+                # not have multiple styles to split into duet parts. If this happens the song will be mapped as normal.
+                if len(duet_parts) == 1:
+                    self.overlap_filter_method = None  # Set to prevent the program attempting to map as a duet.
+                else:
+                    self._convert_lines(duet_parts[0], 'P1')
+                    self._convert_lines(duet_parts[1], 'P2')
+            else:
+                raise ValueError('A valid decision function must be passed to select a style.')
+
+        # Duets are mapped before this line.
+        if self.overlap_filter_method != 'duet':
+            self._convert_lines(subtitle_lines)
+
+        song_folder_name = self.ultrastar_song.meta_lines['ARTIST'] + ' - ' + self.ultrastar_song.meta_lines['TITLE']
+        song_folder_name = re.sub(r'[^\w\-.() ]+', '', song_folder_name)
+        song_folder_name = song_folder_name.strip()
+
+        output_folder = Path('output')
+        song_folder = output_folder.joinpath(song_folder_name)
         song_folder.mkdir(parents=True)
 
-        # --------------------------
-        # Generate song file
-        # --------------------------
+        if self.files['audio']:
+            cover_name = song_folder_name + self.files['audio'].suffix
+            self.ultrastar_song.add_metadata('MP3', cover_name)
+            shutil.copy(self.files['audio'], song_folder.joinpath(cover_name))
 
-        # ---------------
-        # Notes
-        # ---------------
+        if self.files['background_image']:
+            cover_name = song_folder_name + self.files['background_image'].suffix
+            self.ultrastar_song.add_metadata('BACKGROUND', cover_name)
+            shutil.copy(self.files['background_image'], song_folder.joinpath(cover_name))
 
-        # Parse subtitle file to get the notes section.
-        notes_section = self.build_note_section(subtitle_path, overlap_skip)
+        if self.files['background_video']:
+            cover_name = song_folder_name + self.files['background_video'].suffix
+            self.ultrastar_song.add_metadata('VIDEO', cover_name)
+            shutil.copy(self.files['background_video'], song_folder.joinpath(cover_name))
 
-        # ---------------
-        # Metadata
-        # ---------------
+        if self.files['cover']:
+            cover_name = song_folder_name + ' [CO]' + self.files['cover'].suffix
+            self.ultrastar_song.add_metadata('COVER', cover_name)
+            shutil.copy(self.files['cover'], song_folder.joinpath(cover_name))
 
-        metadata = '#TITLE:{0}\n#ARTIST:{1}\n'.format(title_string, kara_data['artists'])
-        metadata += '#LANGUAGE:{0}\n'.format(kara_data['language'])
+        ultrastar_file = song_folder.joinpath(song_folder_name + '.txt')
+        with open(ultrastar_file, 'w', encoding='utf-8') as f:
+            f.write(str(self.ultrastar_song))
 
-        creator_string = kara_data['authors'] + ('' if not extra_creator else (' & ' + extra_creator))
-        metadata += '#CREATOR:{0}\n'.format(creator_string)
+        if self.kara_url:
+            shutil.rmtree(download_directory)
 
-        # Custom tag not used by Ultrastar is used to mark the song as a KaraLuxer port.
-        metadata += '#KARALUXERVERSION:{0}\n'.format(VERSION)
+        if self.autopitch:
+            self._autopitch(song_folder)
 
-        # ---------------
-        # Files
-        # ---------------
 
-        # Paths are made relative and files will be renamed to match the base name.
-        mp3_name = '{0}.mp3'.format(sanitized_base_name)
-        linked_files = '#MP3:{0}\n'.format(mp3_name)
-        shutil.copy(audio_path, song_folder.joinpath(mp3_name))
+def main() -> None:
+    """Command Line Interface for Karaluxer."""
 
-        if cover_path:
-            cover_name = '{0} [CO]{1}'.format(sanitized_base_name, cover_path.suffix)
-            linked_files += '#COVER:{0}\n'.format(cover_name)
-            shutil.copy(cover_path, song_folder.joinpath(cover_name))
+    argument_parser = argparse.ArgumentParser()
+    argument_parser.add_argument('-k', '--kara_url', type=str, help='The Kara.moe url to use.')
+    argument_parser.add_argument('-s', '--sub_file', type=str, help='The subtitle file to use.')
+    argument_parser.add_argument('-c', '--cover', type=str, help='The cover image for the song.')
+    argument_parser.add_argument('-bg', '--background', type=str, help='The background image for the song.')
+    argument_parser.add_argument('-bv', '--video', type=str, help='The video file for the song.')
+    argument_parser.add_argument('-a', '--audio', type=str, help='The audio file for the song.')
+    argument_parser.add_argument('-io', '--ignore_overlaps', action='store_true', help='Ignore overlapping lines.')
+    argument_parser.add_argument('-fd', '--force_dialogue',
+                                 action='store_true', help='Force use of lines marked "Dialogue".')
+    argument_parser.add_argument('-tv', '--tv_sized', action='store_true', help='Mark this song as TV sized.')
+    argument_parser.add_argument('-ap', '--autopitch',
+                                 action='store_true', help='Pitch the song using ultrastar_pitch.')
 
-        if bg_path:
-            background_name = '{0} [BG]{1}'.format(sanitized_base_name, bg_path.suffix)
-            linked_files += '#BACKGROUND:{0}\n'.format(background_name)
-            shutil.copy(bg_path, song_folder.joinpath(background_name))
+    argument_parser.set_defaults(ignore_overlaps=False, force_dialogue=False, tv_sized=False, autopitch=False)
 
-        if bgv_path:
-            bg_video_name = '{0}{1}'.format(sanitized_base_name, bgv_path.suffix)
-            linked_files += '#VIDEO:{0}\n'.format(bg_video_name)
-            shutil.copy(bgv_path, song_folder.joinpath(bg_video_name))
+    arguments = argument_parser.parse_args()
 
-        # ---------------
-        # Song data
-        # ---------------
+    karaluxer_instance = KaraLuxer(
+        arguments.kara_url,
+        arguments.sub_file,
+        arguments.cover,
+        arguments.background,
+        arguments.video,
+        arguments.audio,
+        arguments.ignore_overlaps,
+        arguments.force_dialogue,
+        arguments.tv_sized,
+        arguments.autopitch
+    )
 
-        # Ultrastar requires the BPM opf the song.
-        # This script uses a fixed 'beats per second' to produce timings, the BPM is calculated from the BPS.
-        # The BPM put into the ultrastar file needs to be around 1/4 of the calculated BPM (I'm not sure why).
-        beats_per_minute = (BEATS_PER_SECOND * 60) / 4
+    def cli_overlap_decision_function(overlapping_lines: List[ass.line._Event]) -> ass.line._Event:
+        for i in range(0, len(overlapping_lines)):
+            clean_line = re.sub(r'\{(.*?)\}', '', str(overlapping_lines[i].text))
+            print('{0}.) {1}'.format(i, clean_line))
 
-        song_data = '#BPM:{0}\n#GAP:0\n'.format(beats_per_minute)
+        print('Select a line to DISCARD.')
+        while True:
+            try:
+                selection = int(input(':>'))
+            except ValueError:
+                print('Please specify a valid integer.')
+                continue
 
-        # ---------------
-        # Write file
-        # ---------------
+            if 0 <= selection < len(overlapping_lines):
+                return overlapping_lines[selection]
+            else:
+                print('Please specify an integer in the correct range.')
+                continue
 
-        # Combine all the components of the file.
-        ultrastar_file = metadata + linked_files + song_data + notes_section + 'E\n'
+    def cli_style_selection_function(styles: List[Tuple[str, int]]) -> str:
+        for i in range(0, len(styles)):
+            print('{0}.) {1} ({2} lines in this style)'.format(i, styles[i][0], styles[i][1]))
 
-        # Write the file.
-        ultrastar_file_path = song_folder.joinpath('{0}.txt'.format(sanitized_base_name))
-        with open(ultrastar_file_path, 'w', encoding='utf-8') as f:
-            f.write(ultrastar_file)
+        print('Select a style to DISCARD. All lines in this style will be discarded.')
+        while True:
+            try:
+                selection = int(input(':>'))
+            except ValueError:
+                print('Please specify a valid integer.')
+                continue
 
-        # Clear downloads
-        shutil.rmtree(tmp_data)
+            if 0 <= selection < len(styles):
+                return styles[selection][0]
+            else:
+                print('Please specify an integer in the correct range.')
+                continue
 
-        self.output_text.setText('Finished.')
-        self.display_message(self.LVL_INFO, 'Finished mapping the song. Check the output folder.')
+    karaluxer_instance.run(cli_overlap_decision_function, cli_style_selection_function)
 
 
 if __name__ == '__main__':
-    app = QApplication([])
-    window = KaraLuxer()
-    window.show()
-    sys.exit(app.exec_())
+    main()

@@ -1,4 +1,5 @@
 # Virtual environment
+.venv/
 venv/
 
 # VSCode files
@@ -12,6 +13,7 @@ tmp/
 
 # Output folder
 out/
+output/
 
 # Pyinstaller folders
 build/

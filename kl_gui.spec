@@ -4,10 +4,10 @@
 block_cipher = None
 
 
-a = Analysis(['karaluxer.py'],
+a = Analysis(['kl_gui.py'],
              pathex=[],
-             binaries=[('tools/ffmpeg.exe', '.')],
-             datas=[('venv/lib/site-packages/certifi/cacert.pem', 'certifi')],
+             binaries=[('tools/ffmpeg.exe', '.'), ('tools/pitchnet_2020_12_14.onnx', '.')],
+             datas=[('.venv/lib/site-packages/certifi/cacert.pem', 'certifi')],
              hiddenimports=[],
              hookspath=[],
              hooksconfig={},
@@ -26,7 +26,7 @@ exe = EXE(pyz,
           a.zipfiles,
           a.datas,
           [],
-          name='karaluxer',
+          name='Karaluxer GUI',
           debug=False,
           bootloader_ignore_signals=False,
           strip=False,
