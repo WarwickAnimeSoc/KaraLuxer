@@ -26,7 +26,7 @@ jobs:
           (gc kl_gui.spec) -replace 'tools/ffmpeg.exe', 'C:/hostedtoolcache/windows/ffmpeg/5.0.1/x64/ffmpeg.exe' | Out-File -encoding UTF8 kl_gui.spec
           (gc kl_gui.spec) -replace 'tools/', 'C:/hostedtoolcache/windows/Python/3.10.8/x64/Lib/site-packages/ultrastar_pitch/binaries/' | Out-File -encoding UTF8 kl_gui.spec
           (gc kl_gui.spec) -replace '.venv/', 'C:/hostedtoolcache/windows/Python/3.10.8/x64/' | Out-File -encoding UTF8 kl_gui.spec
-         pyinstaller kl_gui.spec
+          pyinstaller kl_gui.spec
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
