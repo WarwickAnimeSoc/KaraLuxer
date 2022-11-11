@@ -38,3 +38,5 @@ a FFMPEG binary must be placed in the `tools` subfolder, as well as `pitchnet_20
   - Change Style filter mode to support removing only specific styles.
 - Make popup UIs (Style and Line selection) more general to avoid code repetition.
   - Both popups are functionally the same, they could be combined into one.
+- Better handling of special characters.
+  - Requires testing Vocaluxe to see where we can and can't include special characters (e.g. Filenames, Notes, Metadata)
