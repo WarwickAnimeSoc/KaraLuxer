@@ -53,6 +53,12 @@ jobs:
           sudo sed -i '' 's|tools/|/Users/runner/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/ultrastar_pitch/binaries/|' kl_gui.spec
           sudo sed -i '' 's|.venv/lib/|/Users/runner/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/|' kl_gui.spec
           python -m pip install -r requirements.txt
+          cd /opt/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/
+          ls
+          /opt/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/ultrastar_pitch/
+          ls
+          cd /opt/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/ultrastar_pitch/binaries/
+          ls
 
       - name: Create bundle
         run: pyinstaller kl_gui.spec
@@ -85,6 +91,12 @@ jobs:
           sudo sed -i 's|tools/|/opt/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/ultrastar_pitch/binaries/|' kl_gui.spec
           sudo sed -i 's|.venv/lib/|/opt/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/|' kl_gui.spec
           python -m pip install -r requirements.txt
+          cd /opt/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/
+          ls
+          /opt/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/ultrastar_pitch/
+          ls
+          cd /opt/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/ultrastar_pitch/binaries/
+          ls
 
       - name: Create bundle
         run: pyinstaller kl_gui.spec
