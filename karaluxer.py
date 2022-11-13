@@ -354,9 +354,9 @@ class KaraLuxer():
                     current_beat += converted_duration
                     continue
 
-                    # Notes should be slightly shorter than their original duration, to make it easier to sing.
-                    # Currently this is done by simply reducing the duration by one. This could use improvement.
-                    tweaked_duration = converted_duration - 1 if converted_duration > 1 else converted_duration
+                # Notes should be slightly shorter than their original duration, to make it easier to sing.
+                # Currently this is done by simply reducing the duration by one. This could use improvement.
+                tweaked_duration = converted_duration - 1 if converted_duration > 1 else converted_duration
 
                 self.ultrastar_song.add_note(
                     ':',
