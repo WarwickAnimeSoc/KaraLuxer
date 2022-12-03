@@ -441,7 +441,7 @@ class KaraLuxerWindow(QDialog):
         selection_window = OverlapSelectionWindow(overlapping_lines)
         selection_window.exec()
 
-        self.karaluxer_thread.discard_line_signal.emit(overlapping_lines[selection_window.selected_style])
+        self.karaluxer_thread.discard_line_signal.emit(overlapping_lines[selection_window.selected_line])
 
     def _style_decision(self, styles: List[Tuple[str, int]]) -> None:
         """Slot which generates a popup window to select between styles.
@@ -503,8 +503,6 @@ class KaraLuxerWindow(QDialog):
 
         force_dialogue = self.force_dialogue_checkbox.isChecked()
         generate_pitches = self.autopitch_checkbox.isChecked()
-
-        print('overlap mode: ' + str(overlap_filter_mode))
 
         try:
             karaluxer_instance = KaraLuxer(
