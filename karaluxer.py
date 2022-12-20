@@ -472,6 +472,8 @@ class KaraLuxer():
                 self.overlap_filter_method is "duet" or "style".
         """
 
+        self.ultrastar_song.add_metadata('ENCODING', 'UTF8')
+
         if self.kara_url:
             kara_id = self.kara_url.split('/')[-1]
             kara_data = self._fetch_kara_data(kara_id)
