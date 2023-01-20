@@ -14,7 +14,7 @@ jobs:
       - name: Install python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.10.9'
 
       - name: Install dependencies
         run: |
@@ -24,8 +24,8 @@ jobs:
       - name: Create bundle
         run: |
           (gc kl_gui.spec) -replace 'tools/ffmpeg.exe', 'C:/hostedtoolcache/windows/ffmpeg/5.0.1/x64/ffmpeg.exe' | Out-File -encoding UTF8 kl_gui.spec
-          (gc kl_gui.spec) -replace 'tools/', 'C:/hostedtoolcache/windows/Python/3.10.8/x64/Lib/site-packages/ultrastar_pitch/binaries/' | Out-File -encoding UTF8 kl_gui.spec
-          (gc kl_gui.spec) -replace '.venv/', 'C:/hostedtoolcache/windows/Python/3.10.8/x64/' | Out-File -encoding UTF8 kl_gui.spec
+          (gc kl_gui.spec) -replace 'tools/', 'C:/hostedtoolcache/windows/Python/3.10.9/x64/Lib/site-packages/ultrastar_pitch/binaries/' | Out-File -encoding UTF8 kl_gui.spec
+          (gc kl_gui.spec) -replace '.venv/', 'C:/hostedtoolcache/windows/Python/3.10.9/x64/' | Out-File -encoding UTF8 kl_gui.spec
           pyinstaller kl_gui.spec
 
       - name: Upload artifacts
@@ -47,13 +47,13 @@ jobs:
       - name: Install python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.10.9'
 
       - name: Install dependencies
         run: |
-          sudo sed -i '' 's|tools/ffmpeg.exe|/usr/local/Cellar/ffmpeg/5.1.2/bin/ffmpeg|' kl_gui.spec
-          sudo sed -i '' 's|tools/|/Users/runner/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/site-packages/ultrastar_pitch/binaries/|' kl_gui.spec
-          sudo sed -i '' 's|.venv/lib/|/Users/runner/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/|' kl_gui.spec
+          sudo sed -i '' 's|tools/ffmpeg.exe|/usr/local/Cellar/ffmpeg/5.1.2_1/bin/ffmpeg|' kl_gui.spec
+          sudo sed -i '' 's|tools/|/Users/runner/hostedtoolcache/Python/3.10.9/x64/lib/python3.10/site-packages/ultrastar_pitch/binaries/|' kl_gui.spec
+          sudo sed -i '' 's|.venv/lib/|/Users/runner/hostedtoolcache/Python/3.10.9/x64/lib/python3.10/|' kl_gui.spec
           
           sudo sed -i '' 's|PyQt5-Qt5|PyQt5|' requirements.txt
           python -m pip install -r requirements.txt
@@ -81,13 +81,13 @@ jobs:
       - name: Install python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.10.9'
 
       - name: Install dependencies
         run: |
           sudo sed -i 's|tools/ffmpeg.exe|/usr/bin/ffmpeg|' kl_gui.spec
-          sudo sed -i 's|tools/|/opt/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/site-packages/ultrastar_pitch/binaries/|' kl_gui.spec
-          sudo sed -i 's|.venv/lib/|/opt/hostedtoolcache/Python/3.10.8/x64/lib/python3.10/|' kl_gui.spec
+          sudo sed -i 's|tools/|/opt/hostedtoolcache/Python/3.10.9/x64/lib/python3.10/site-packages/ultrastar_pitch/binaries/|' kl_gui.spec
+          sudo sed -i 's|.venv/lib/|/opt/hostedtoolcache/Python/3.10.9/x64/lib/python3.10/|' kl_gui.spec
           
           sudo sed -i 's|PyQt5-Qt5|PyQt5|' requirements.txt
           python -m pip install -r requirements.txt
