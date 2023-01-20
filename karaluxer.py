@@ -10,6 +10,7 @@ import re
 import warnings
 import json
 import argparse
+import urllib.parse
 
 import requests
 import ass
@@ -424,9 +425,9 @@ class KaraLuxer():
         file_path = Path(filename)
 
         if file_path.suffix == '.ass':
-            response = requests.get('https://kara.moe/downloads/lyrics/' + filename)
+            response = requests.get('https://kara.moe/downloads/lyrics/' + urllib.parse.quote(filename))
         else:
-            response = requests.get('https://kara.moe/downloads/medias/' + filename)
+            response = requests.get('https://kara.moe/downloads/medias/' + urllib.parse.quote(filename))
 
         if response.status_code != 200:
             raise ValueError('Unexpected response from kara.')
