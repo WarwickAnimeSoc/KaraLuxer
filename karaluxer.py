@@ -32,6 +32,7 @@ else:
 # files for karaoke specify timings in centiseconds, therefore to avoid rounding KaraLuxer uses 100 beats per second.
 # Using a fixed BPM, and a high one (6000 BPM) makes manual editing of the files produced by KaraLuxer harder.
 KARALUXER_BPS = 100
+KARALUXER_BPM = 1500
 
 # Regular expression to capture the timing/syllables from a line by stripping out the karaoke tags.
 # Note: Supports multiple tags on a syllable (such as color) but assumes that the karaoke timing will be the first tag.
@@ -60,7 +61,8 @@ class KaraLuxer():
         overlap_filter_method: Optional[str] = None,
         force_dialogue_lines: bool = False,
         tv_sized: bool = False,
-        autopitch: bool = False
+        autopitch: bool = False,
+        bpm: float = 1500
     ) -> None:
         """Sets up the KaraLuxer instance.
 
@@ -85,6 +87,8 @@ class KaraLuxer():
             tv_sized (bool, optional): If True will append (TV) to the song title. (This is the convention that
                 ultrastar.es uses).
             autopitch (bool, optional): If True Karaluxer will attempt to use ultrastar_pitch to pitch the notes.
+            bpm (float, optional): The BPM (beats per minute) of the song that will be used instead of the default 1500
+                BPM. For ultrastar maps, this tends to be approximately 300, even if the true BPM is often much lower.
         """
 
         # One of kara_url or ass_file must be passed to the Karaluxer instance.
@@ -103,6 +107,7 @@ class KaraLuxer():
         self.force_dialogue_lines = force_dialogue_lines
         self.tv_sized = tv_sized
         self.autopitch = autopitch
+        self.bpm = bpm
 
         # Parameter checks
         if kara_url and not re.match(r'https:\/\/kara\.moe\/kara\/[\w-]+\/[\w-]+', kara_url):
@@ -361,8 +366,8 @@ class KaraLuxer():
 
                 self.ultrastar_song.add_note(
                     ':',
-                    current_beat,
-                    tweaked_duration,
+                    int(round(current_beat * self.bpm / KARALUXER_BPM)),
+                    int(round(tweaked_duration * self.bpm / KARALUXER_BPM)),
                     DEFAULT_PITCH,
                     syllable_text,
                     duet_part
@@ -543,7 +548,7 @@ class KaraLuxer():
         self.ultrastar_song.add_metadata('GAP', '0')
 
         # The BPM of the song needs to be 1/4 of the actual BPS used in mapping. I'm not sure why.
-        self.ultrastar_song.add_metadata('BPM', str((KARALUXER_BPS * 60) / 4))
+        self.ultrastar_song.add_metadata('BPM', str(self.bpm))
 
         subtitle_lines = self._load_subtitle_lines()
 
@@ -637,6 +642,8 @@ def main() -> None:
     argument_parser.add_argument('-tv', '--tv_sized', action='store_true', help='Mark this song as TV sized.')
     argument_parser.add_argument('-ap', '--autopitch',
                                  action='store_true', help='Pitch the song using ultrastar_pitch.')
+    argument_parser.add_argument('--bpm', type=float, default=1500.,
+                                 help='The BPM of the song. If not provided, 1500 will be used as default.')
 
     argument_parser.set_defaults(ignore_overlaps=False, force_dialogue=False, tv_sized=False, autopitch=False)
 
@@ -652,7 +659,8 @@ def main() -> None:
         arguments.ignore_overlaps,
         arguments.force_dialogue,
         arguments.tv_sized,
-        arguments.autopitch
+        arguments.autopitch,
+        arguments.bpm
     )
 
     def cli_overlap_decision_function(overlapping_lines: List[ass.line._Event]) -> ass.line._Event:
