@@ -23,7 +23,7 @@ jobs:
 
       - name: Create bundle
         run: |
-          (gc kl_gui.spec) -replace 'tools/ffmpeg.exe', ${{steps.setup-ffmpeg.ffmpeg-path}} | Out-File -encoding UTF8 kl_gui.spec
+          (gc kl_gui.spec) -replace 'tools/ffmpeg.exe', "${{steps.setup-ffmpeg.ffmpeg-path}}" | Out-File -encoding UTF8 kl_gui.spec
           (gc kl_gui.spec) -replace 'tools/', 'C:/hostedtoolcache/windows/Python/3.10.9/x64/Lib/site-packages/ultrastar_pitch/binaries/' | Out-File -encoding UTF8 kl_gui.spec
           (gc kl_gui.spec) -replace '.venv/', 'C:/hostedtoolcache/windows/Python/3.10.9/x64/' | Out-File -encoding UTF8 kl_gui.spec
           pyinstaller kl_gui.spec
@@ -42,7 +42,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install ffmpeg
-        run: brew install ffmpeg@6.1.1
+        run: brew install ffmpeg@6
 
       - name: Install python
         uses: actions/setup-python@v4
