@@ -51,7 +51,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo sed -i '' 's|tools/ffmpeg.exe|/usr/local/Cellar/ffmpeg/6.0_2/bin/ffmpeg|' kl_gui.spec
+          sudo sed -i '' 's|tools/ffmpeg.exe|ffmpeg|' kl_gui.spec
+          
           sudo sed -i '' 's|tools/|/Users/runner/hostedtoolcache/Python/3.10.9/x64/lib/python3.10/site-packages/ultrastar_pitch/binaries/|' kl_gui.spec
           sudo sed -i '' 's|.venv/lib/|/Users/runner/hostedtoolcache/Python/3.10.9/x64/lib/python3.10/|' kl_gui.spec
           
