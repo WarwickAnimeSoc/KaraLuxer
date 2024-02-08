@@ -291,10 +291,16 @@ class KaraLuxerWindow(QDialog):
         audio_button.clicked.connect(lambda: self._get_file_path(self.audio_input, "Audio files (*.mp3)"))
         optional_args_layout.addWidget(audio_button, 2, 2)
 
+        self.bpm = QLineEdit()
+        self.bpm.setPlaceholderText('Default is 1500.')
+        optional_args_layout.addWidget(QLabel('BPM:'), 3, 0)
+        optional_args_layout.addWidget(self.bpm, 3, 1)
+        optional_args_layout.addWidget(QLabel('For easier mapping and singing'), 3, 2)
+
         self.tv_checkbox = QCheckBox()
-        optional_args_layout.addWidget(QLabel('TV Sized:'), 3, 0)
-        optional_args_layout.addWidget(self.tv_checkbox, 3, 1)
-        optional_args_layout.addWidget(QLabel('Appends "(TV)" to the song title'), 3, 2)
+        optional_args_layout.addWidget(QLabel('TV Sized:'), 4, 0)
+        optional_args_layout.addWidget(self.tv_checkbox, 4, 1)
+        optional_args_layout.addWidget(QLabel('Appends "(TV)" to the song title'), 4, 2)
 
         optional_args_group.setLayout(optional_args_layout)
 
@@ -496,6 +502,13 @@ class KaraLuxerWindow(QDialog):
         audio_file = self.audio_input.text() if self.audio_input.text() else None
         tv_sized = self.tv_checkbox.isChecked()
 
+        try:
+            bpm = float(self.bpm.text()) if self.bpm.text() else 1500
+        except ValueError:
+            self._display_message(f'BPM must be a number, but "{self.bpm.text()}" was provided.', self.LVL_ERROR)
+            self._indicator_bar_stop()
+            return
+
         overlap_filter_mode = None
         overlap_filter_mode = "style" if self.style_overlaps_checkbox.isChecked() else overlap_filter_mode
         overlap_filter_mode = "individual" if self.individual_overlaps_checkbox.isChecked() else overlap_filter_mode
@@ -515,7 +528,8 @@ class KaraLuxerWindow(QDialog):
                 overlap_filter_mode,
                 force_dialogue,
                 tv_sized,
-                generate_pitches
+                generate_pitches,
+                bpm
             )
         except (ValueError, IOError) as e:
             self._display_message(str(e), self.LVL_ERROR)
