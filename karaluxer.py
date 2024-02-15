@@ -376,7 +376,7 @@ class KaraLuxer():
                 current_beat += converted_duration
 
             # Write a linebreak at the end of the line.
-            self.ultrastar_song.add_note('-', current_beat)
+            self.ultrastar_song.add_note('-', int(round(current_beat * self.bpm / KARALUXER_BPM)))
 
     def _fetch_kara_data(self, kara_id: str) -> Dict[str, str]:
         """Fetches relevant data about a map using the Kara api.
