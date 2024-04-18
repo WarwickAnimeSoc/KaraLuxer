@@ -398,7 +398,8 @@ class KaraLuxer():
             'title': data['titles'][data['titles_default_language']],
             'sub_file': data['subfile'],
             'media_file': data['mediafile'],
-            'language': data['langs'][0]['i18n']['eng']
+            'language': data['langs'][0]['i18n']['eng'],
+            'year': data['year']
         }
 
         # Get song artists. Prioritizes "singergroups" (band) field when present.
@@ -413,6 +414,33 @@ class KaraLuxer():
         for author in data['authors']:
             authors += author['name'] + ' & '
         kara_data['authors'] = authors[:-3]
+
+        anime = []
+        for series in data['series']:
+            name = series['name'].replace(',', '')  # Default name
+
+            try:
+                anime.append(series['i18n']['eng'].replace(',', ''))
+
+                # Only add the default name if it is different from the English name
+                if anime[-1] != name:
+                    anime.append(name)
+            except KeyError:
+                anime.append(name)
+
+            if series['aliases']:
+                for alias in series['aliases']:
+                    anime.append(alias.replace(',', ''))
+
+        song_types = []
+        for song_type in data['songtypes']:
+            try:
+                song_types.append(song_type['i18n']['eng'])
+            except KeyError:
+                pass
+
+        tags = ', '.join([', '.join(anime), ', '.join(song_types)])
+        kara_data['tags'] = tags
 
         return kara_data
 
@@ -488,6 +516,9 @@ class KaraLuxer():
             self.ultrastar_song.add_metadata('ARTIST', kara_data['artists'])
             self.ultrastar_song.add_metadata('CREATOR', kara_data['authors'])
             self.ultrastar_song.add_metadata('LANGUAGE', kara_data['language'])
+            self.ultrastar_song.add_metadata('YEAR', kara_data['year'])
+            if kara_data['tags']:
+                self.ultrastar_song.add_metadata('TAGS', kara_data['tags'])
 
             temporary_folder = Path('tmp')
 
