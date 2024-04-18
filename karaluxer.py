@@ -519,6 +519,7 @@ class KaraLuxer():
             self.ultrastar_song.add_metadata('YEAR', kara_data['year'])
             if kara_data['tags']:
                 self.ultrastar_song.add_metadata('TAGS', kara_data['tags'])
+            self.ultrastar_song.add_metadata('VERSION', '1.1.0')
 
             temporary_folder = Path('tmp')
 
