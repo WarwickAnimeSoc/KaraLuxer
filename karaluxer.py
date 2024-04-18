@@ -406,13 +406,13 @@ class KaraLuxer():
         artist_data = data['singergroups'] if data['singergroups'] else data['singers']
         artists = ''
         for singer in artist_data:
-            artists += singer['name'] + ' & '
+            artists += singer['name'] + ', '
         kara_data['artists'] = artists[:-3]
 
         # Get map authors
         authors = ''
         for author in data['authors']:
-            authors += author['name'] + ' & '
+            authors += author['name'] + ', '
         kara_data['authors'] = authors[:-3]
 
         anime = []
