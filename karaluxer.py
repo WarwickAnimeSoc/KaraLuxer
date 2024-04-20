@@ -62,7 +62,8 @@ class KaraLuxer():
         force_dialogue_lines: bool = False,
         tv_sized: bool = False,
         autopitch: bool = False,
-        bpm: float = 1500
+        bpm: float = 1500,
+        bpm_multiplier: int = 1
     ) -> None:
         """Sets up the KaraLuxer instance.
 
@@ -89,6 +90,10 @@ class KaraLuxer():
             autopitch (bool, optional): If True Karaluxer will attempt to use ultrastar_pitch to pitch the notes.
             bpm (float, optional): The BPM (beats per minute) of the song that will be used instead of the default 1500
                 BPM. For ultrastar maps, this tends to be approximately 300, even if the true BPM is often much lower.
+            bpm_multiplier (int, optional): The BPM multiplier, or the multiplier of the karaoke BPM with respect to
+                the true BPM. In other words: $\frac{karaoke BPM}{true BPM}$. Having the karaoke BPM a 3 or 4 multiple
+                of the true BPM allows for easier creation of gaps in between notes. Providing this option will allow
+                KaraLuxer to arrange the notes more closely to the correct timing.
         """
 
         # One of kara_url or ass_file must be passed to the Karaluxer instance.
@@ -108,6 +113,7 @@ class KaraLuxer():
         self.tv_sized = tv_sized
         self.autopitch = autopitch
         self.bpm = bpm
+        self.bpm_multiplier = bpm_multiplier
 
         # Parameter checks
         if kara_url and not re.match(r'https:\/\/kara\.moe\/kara\/[\w-]+\/[\w-]+', kara_url):
@@ -612,12 +618,18 @@ class KaraLuxer():
                 else:
                     self._convert_lines(duet_parts[0], 'P1')
                     self._convert_lines(duet_parts[1], 'P2')
+
+                    if self.bpm_multiplier > 1:
+                        for player in ['P1', 'P2']:
+                            self.ultrastar_song.adjust_notes(self.bpm_multiplier, player)
             else:
                 raise ValueError('A valid decision function must be passed to select a style.')
 
         # Duets are mapped before this line.
         if self.overlap_filter_method != 'duet':
             self._convert_lines(subtitle_lines)
+            if self.bpm_multiplier > 1:
+                self.ultrastar_song.adjust_notes(self.bpm_multiplier)
 
         song_folder_name = self.ultrastar_song.meta_lines['ARTIST'] + ' - ' + self.ultrastar_song.meta_lines['TITLE']
         song_folder_name = re.sub(r'[^\w\-.() ]+', '', song_folder_name)
@@ -676,6 +688,10 @@ def main() -> None:
                                  action='store_true', help='Pitch the song using ultrastar_pitch.')
     argument_parser.add_argument('--bpm', type=float, default=1500.,
                                  help='The BPM of the song. If not provided, 1500 will be used as default.')
+    argument_parser.add_argument('--bpm-multiplier', type=int, default=1,
+                                 help='The integer by which the true song BPM was multiplied to obtain the provided '
+                                      '(the "--bpm" option) karaoke BPM. If provided, this multiplier is used to '
+                                      'remove overlaps and otherwise clean up the timings to make mapping easier.')
 
     argument_parser.set_defaults(ignore_overlaps=False, force_dialogue=False, tv_sized=False, autopitch=False)
 
@@ -692,7 +708,8 @@ def main() -> None:
         arguments.force_dialogue,
         arguments.tv_sized,
         arguments.autopitch,
-        arguments.bpm
+        arguments.bpm,
+        arguments.bpm_multiplier
     )
 
     def cli_overlap_decision_function(overlapping_lines: List[ass.line._Event]) -> ass.line._Event:

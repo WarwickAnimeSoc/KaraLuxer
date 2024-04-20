@@ -293,9 +293,11 @@ class KaraLuxerWindow(QDialog):
 
         self.bpm = QLineEdit()
         self.bpm.setPlaceholderText('Default is 1500.')
+        self.bpm_multiplier = QLineEdit()
+        self.bpm_multiplier.setPlaceholderText('Multiplier')
         optional_args_layout.addWidget(QLabel('BPM:'), 3, 0)
         optional_args_layout.addWidget(self.bpm, 3, 1)
-        optional_args_layout.addWidget(QLabel('For easier mapping and singing'), 3, 2)
+        optional_args_layout.addWidget(self.bpm_multiplier, 3, 2)
 
         self.tv_checkbox = QCheckBox()
         optional_args_layout.addWidget(QLabel('TV Sized:'), 4, 0)
@@ -509,6 +511,14 @@ class KaraLuxerWindow(QDialog):
             self._indicator_bar_stop()
             return
 
+        try:
+            bpm_multiplier = int(self.bpm_multiplier.text()) if self.bpm_multiplier.text() else 1
+        except ValueError:
+            self._display_message(f'The BPM multipliear must be an integer, but "{self.bpm.text()}" was provided.',
+                                  self.LVL_ERROR)
+            self._indicator_bar_stop()
+            return
+
         overlap_filter_mode = None
         overlap_filter_mode = "style" if self.style_overlaps_checkbox.isChecked() else overlap_filter_mode
         overlap_filter_mode = "individual" if self.individual_overlaps_checkbox.isChecked() else overlap_filter_mode
@@ -529,7 +539,8 @@ class KaraLuxerWindow(QDialog):
                 force_dialogue,
                 tv_sized,
                 generate_pitches,
-                bpm
+                bpm,
+                bpm_multiplier
             )
         except (ValueError, IOError) as e:
             self._display_message(str(e), self.LVL_ERROR)

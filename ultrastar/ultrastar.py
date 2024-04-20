@@ -103,6 +103,55 @@ class UltrastarSong():
         note = NoteLine(note_type, start_beat, duration, pitch, text)
         self.note_lines[player].append(note)
 
+    def adjust_notes(
+        self,
+        bpm_multiplier: int,
+        player: str = 'P1'
+    ) -> None:
+        notes = self.note_lines[player]
+        for i, note in enumerate(notes):
+            if note.note_type != '-':
+                start = i
+                break
+        else:
+            return
+
+        start_beat = notes[start].start_beat
+
+        if notes[start].duration < bpm_multiplier:
+            notes[start].duration = bpm_multiplier
+        else:
+            notes[start].duration = bpm_multiplier * round(notes[start].duration / bpm_multiplier)
+
+        for i, note in enumerate(notes[start+1:]):
+            for previous_note in notes[start+i::-1]:
+                if previous_note.note_type != '-':
+                    break
+            else:
+                continue
+
+            previous_note_end = previous_note.start_beat + previous_note.duration
+
+            if note.note_type == '-':
+                if note.start_beat < previous_note_end:
+                    note.start_beat = previous_note_end
+                continue
+
+            if note.start_beat < previous_note_end:
+                note.start_beat = previous_note_end
+            else:
+                modulus = (note.start_beat - start_beat) % bpm_multiplier
+                if modulus != 0:
+                    if round(modulus / bpm_multiplier) == 1:
+                        note.start_beat += bpm_multiplier - modulus
+                    else:
+                        note.start_beat -= modulus
+
+            if note.duration < bpm_multiplier:
+                note.duration = bpm_multiplier
+            else:
+                note.duration = bpm_multiplier * round(note.duration / bpm_multiplier)
+
     def __str__(self) -> str:
         """Produces a string representation of the song.
 
