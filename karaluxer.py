@@ -404,16 +404,10 @@ class KaraLuxer():
 
         # Get song artists. Prioritizes "singergroups" (band) field when present.
         artist_data = data['singergroups'] if data['singergroups'] else data['singers']
-        artists = ''
-        for singer in artist_data:
-            artists += singer['name'] + ', '
-        kara_data['artists'] = artists[:-3]
+        kara_data['artists'] = ', '.join([singer['name'] for singer in artist_data])
 
         # Get map authors
-        authors = ''
-        for author in data['authors']:
-            authors += author['name'] + ', '
-        kara_data['authors'] = authors[:-3]
+        kara_data['authors'] = ', '.join([author['name'] for author in data['authors']])
 
         anime = []
         for series in data['series']:
