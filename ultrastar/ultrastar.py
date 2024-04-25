@@ -137,7 +137,8 @@ class UltrastarSong():
                     note.start_beat = previous_note_end
                 continue
 
-            if note.start_beat < previous_note_end:
+            if previous_note_end > note.start_beat > previous_note_end - bpm_multiplier:
+                # If notes are overlapping due to the BPM change rather than because there is an overlap
                 note.start_beat = previous_note_end
             else:
                 modulus = (note.start_beat - start_beat) % bpm_multiplier
