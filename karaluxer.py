@@ -1,5 +1,5 @@
 # Core Karaluxer functionality - CLI interface
-
+import os
 import shutil
 from typing import Callable, Dict, Optional, List, Tuple
 
@@ -542,9 +542,16 @@ class KaraLuxer():
 
                     audio_path = download_directory.joinpath(media_path.stem + '.mp3')
 
-                    ret_val = subprocess.call([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
-                    if ret_val:
-                        raise IOError('Could not convert media to mp3 with FFMPEG.')
+                    env_variables = os.environ.copy()
+                    env_variables['FFMPEG_PATH'] = str(FFMPEG_PATH)
+                    ret_val = subprocess.run(['ffmpeg-normalize', str(media_path), '-c:a', 'libmp3lame', '-b:a', '320k',
+                                              '-t', '-5', '-vn', '-sn', '-o', f'{os.path.abspath(audio_path)}'],
+                                             env=env_variables)
+                    if ret_val.returncode:
+                        print('WARNING: Audio volume normalisation failed.')
+                        ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
+                        if ret_val.returncode:
+                            raise IOError('Could not convert media to mp3 with FFMPEG.')
 
                     self.files['audio'] = audio_path
                 else:
