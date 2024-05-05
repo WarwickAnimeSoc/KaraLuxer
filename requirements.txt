@@ -3,3 +3,4 @@ requests==2.28.1
 ultrastar-pitch==1.0.1
 PyQt5-Qt5==5.15.2
 pyinstaller==5.4.1
+ffmpeg-normalize==1.27.1
