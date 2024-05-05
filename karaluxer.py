@@ -545,7 +545,9 @@ class KaraLuxer():
                     env_variables = os.environ.copy()
                     env_variables['FFMPEG_PATH'] = str(FFMPEG_PATH)
                     ret_val = subprocess.run(['ffmpeg-normalize', str(media_path), '-c:a', 'libmp3lame', '-b:a', '320k',
-                                              '-t', '-5', '-vn', '-sn', '-o', f'{os.path.abspath(audio_path)}'],
+                                              '-t', '-5', '-vn', '-sn', '-lrt', '50',
+                                              '--keep-lra-above-loudness-range-target',
+                                              '-o', f'{os.path.abspath(audio_path)}'],
                                              env=env_variables)
                     if ret_val.returncode:
                         print('WARNING: Audio volume normalisation failed.')
