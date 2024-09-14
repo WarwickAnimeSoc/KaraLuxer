@@ -43,6 +43,9 @@ SYLLABLE_REGEX = re.compile(
 # THe default pitch to assign to notes.
 DEFAULT_PITCH = 19
 
+# The threshold for normalisation using FFMPEG.
+FFMPEG_NORMALISATION_THRESHOLD = 50
+
 # Version number used to tag and identify Karaluxer produced maps.
 KARALUXER_VERSION = '3.0.0'
 
@@ -468,6 +471,51 @@ class KaraLuxer():
         with open(download_directory.joinpath(filename), 'wb') as f:
             f.write(response.content)
 
+    @staticmethod
+    def _find_normalisation_loudness(media_path: Path) -> int:
+        """
+        Finds the loudness (in dB) to increase the kara.moe video by in order to normalise the audio as close to 0dB
+        as possible without significantly degrading the quality.
+
+        Args:
+            media_path: The path to the kara.moe video file.
+
+        Returns:
+            loudness: loudness in dB
+        """
+        # FFMPEG for some reason writes both stdout and stderr into stderr.
+        ret_val = subprocess.run([str(FFMPEG_PATH), '-i', str(media_path), '-af', 'volumedetect', '-vn', '-sn', '-dn',
+                                  '-f', 'null', '-'],
+                                 stderr=subprocess.PIPE)
+
+        if ret_val.returncode:
+            print(f'WARNING: Audio loudness detection failed due to an FFMPEG error:\n{ret_val.stderr.decode()}')
+            return 0
+
+        histograms = re.findall(r'histogram_([0-9]+)db:\s*([0-9]+)', ret_val.stderr.decode())
+        if not histograms:
+            print(f'WARNING: Audio loudness detection failed because no loudness information was found in the FFMPEG '
+                  f'output. This may be a bug caused by change in the FFMPEG stdout.\n'
+                  f'FFMPEG OUTPUT="""{ret_val.stderr.decode()}"""')
+            return 0
+
+        db = int(histograms[0][0])
+        if int(histograms[0][1]) > FFMPEG_NORMALISATION_THRESHOLD:
+            if db == 0:
+                return 0
+            else:
+                return db - 1
+        else:
+            if len(histograms) == 1:
+                return db
+
+            highest = db
+            for histogram in histograms[1:]:
+                if int(histogram[1]) < FFMPEG_NORMALISATION_THRESHOLD:
+                    highest = int(histogram[0])
+                else:
+                    return highest
+
     def _autopitch(self, song_folder: Path) -> None:
         """Pitches the ultrastar file using the ultrastar_pitch utility.
 
@@ -542,15 +590,19 @@ class KaraLuxer():
 
                     audio_path = download_directory.joinpath(media_path.stem + '.mp3')
 
-                    env_variables = os.environ.copy()
-                    env_variables['FFMPEG_PATH'] = str(FFMPEG_PATH)
-                    ret_val = subprocess.run(['ffmpeg-normalize', str(media_path), '-c:a', 'libmp3lame', '-b:a', '320k',
-                                              '-t', '-5', '-vn', '-sn', '-lrt', '50',
-                                              '--keep-lra-above-loudness-range-target',
-                                              '-o', f'{os.path.abspath(audio_path)}'],
-                                             env=env_variables)
-                    if ret_val.returncode:
-                        print('WARNING: Audio volume normalisation failed.')
+                    normalisation_loudness = self._find_normalisation_loudness(media_path)
+
+                    failure = False
+                    if normalisation_loudness != 0:
+                        ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', '-filter:a',
+                                                  f'volume={normalisation_loudness}dB', str(audio_path)])
+                        if ret_val.returncode:
+                            print('WARNING: The audio loudness could not be normalised due to FFMPEG error in the '
+                                  'conversion process.')
+                            failure = True
+
+                    if normalisation_loudness == 0 or failure:
+                        print('Extracting audio without normalising volume...')
                         ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
                         if ret_val.returncode:
                             raise IOError('Could not convert media to mp3 with FFMPEG.')
