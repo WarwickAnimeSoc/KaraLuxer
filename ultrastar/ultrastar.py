@@ -123,7 +123,14 @@ class UltrastarSong():
         else:
             notes[start].duration = bpm_multiplier * round(notes[start].duration / bpm_multiplier)
 
+        last_break_idx = False
         for i, note in enumerate(notes[start+1:]):
+            if note.note_type == '-':
+                last_break_idx = i
+                continue
+            else:
+                last_break_idx = False
+
             for previous_note in notes[start+i::-1]:
                 if previous_note.note_type != '-':
                     break
@@ -131,11 +138,6 @@ class UltrastarSong():
                 continue
 
             previous_note_end = previous_note.start_beat + previous_note.duration
-
-            if note.note_type == '-':
-                if note.start_beat < previous_note_end:
-                    note.start_beat = previous_note_end
-                continue
 
             if previous_note_end > note.start_beat > previous_note_end - bpm_multiplier:
                 # If notes are overlapping due to the BPM change rather than because there is an overlap
@@ -152,6 +154,9 @@ class UltrastarSong():
                 note.duration = bpm_multiplier
             else:
                 note.duration = bpm_multiplier * round(note.duration / bpm_multiplier)
+
+            if last_break_idx:
+                notes[last_break_idx].start_beat = note.start_beat
 
     def __str__(self) -> str:
         """Produces a string representation of the song.
