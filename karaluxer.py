@@ -65,7 +65,8 @@ class KaraLuxer():
         force_dialogue_lines: bool = False,
         tv_sized: bool = False,
         autopitch: bool = False,
-        bpm: float = 1500
+        bpm: float = 1500,
+        enable_normalisation: bool = True
     ) -> None:
         """Sets up the KaraLuxer instance.
 
@@ -92,6 +93,9 @@ class KaraLuxer():
             autopitch (bool, optional): If True Karaluxer will attempt to use ultrastar_pitch to pitch the notes.
             bpm (float, optional): The BPM (beats per minute) of the song that will be used instead of the default 1500
                 BPM. For ultrastar maps, this tends to be approximately 300, even if the true BPM is often much lower.
+            enable_normalisation (bool, optional): If True, the audio will be normalised dueing its extraction from the
+                video file. Regardless of the flag, this happens only if the kara.moe source contains a video file and
+                if its loudness is not already normalised to 0 dB.
         """
 
         # One of kara_url or ass_file must be passed to the Karaluxer instance.
@@ -111,6 +115,7 @@ class KaraLuxer():
         self.tv_sized = tv_sized
         self.autopitch = autopitch
         self.bpm = bpm
+        self.enable_normalisation = enable_normalisation
 
         # Parameter checks
         if kara_url and not re.match(r'https:\/\/kara\.moe\/kara\/[\w-]+\/[\w-]+', kara_url):
@@ -590,18 +595,19 @@ class KaraLuxer():
 
                     audio_path = download_directory.joinpath(media_path.stem + '.mp3')
 
-                    normalisation_loudness = self._find_normalisation_loudness(media_path)
+                    if self.enable_normalisation:
+                        normalisation_loudness = self._find_normalisation_loudness(media_path)
 
-                    failure = False
-                    if normalisation_loudness != 0:
-                        ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', '-filter:a',
-                                                  f'volume={normalisation_loudness}dB', str(audio_path)])
-                        if ret_val.returncode:
-                            print('WARNING: The audio loudness could not be normalised due to FFMPEG error in the '
-                                  'conversion process.')
-                            failure = True
+                        failure = False
+                        if normalisation_loudness != 0:
+                            ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', '-filter:a',
+                                                      f'volume={normalisation_loudness}dB', str(audio_path)])
+                            if ret_val.returncode:
+                                print('WARNING: The audio loudness could not be normalised due to FFMPEG error in the '
+                                      'conversion process.')
+                                failure = True
 
-                    if normalisation_loudness == 0 or failure:
+                    if not self.enable_normalisation or normalisation_loudness == 0 or failure:
                         print('Extracting audio without normalising volume...')
                         ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
                         if ret_val.returncode:
@@ -737,6 +743,9 @@ def main() -> None:
                                  action='store_true', help='Pitch the song using ultrastar_pitch.')
     argument_parser.add_argument('--bpm', type=float, default=1500.,
                                  help='The BPM of the song. If not provided, 1500 will be used as default.')
+    argument_parser.add_argument('-en', '--disable-normalisation', action='store_false',
+                                 help='If provided, disables audio normalisation that occurs when the kara.moe source '
+                                      'contains a video file whose loudness is not normalised to 0 dB.')
 
     argument_parser.set_defaults(ignore_overlaps=False, force_dialogue=False, tv_sized=False, autopitch=False)
 
@@ -753,7 +762,8 @@ def main() -> None:
         arguments.force_dialogue,
         arguments.tv_sized,
         arguments.autopitch,
-        arguments.bpm
+        arguments.bpm,
+        arguments.disable_normalisation
     )
 
     def cli_overlap_decision_function(overlapping_lines: List[ass.line._Event]) -> ass.line._Event:
