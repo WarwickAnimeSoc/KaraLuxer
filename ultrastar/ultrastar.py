@@ -108,6 +108,23 @@ class UltrastarSong():
         bpm_multiplier: int,
         player: str = 'P1'
     ) -> None:
+        """
+        Adjusts all the notes so that they are of a length that is a multiple of the BPM multiplier. All notes are also
+        moved so that they start and end at a beat that is divisible by the BPM multiplier. This should theoretically
+        result in all notes being closer to correct (as long as the correct BPM is being used) and so that they follow
+        the rhythm of the song. However, depending on rounding/etc., it may mess up the timings instead.
+
+        Nevertheless, true note overlaps should be respected, so any notes should not be moved too far off and will
+        still be of the correct length; besides, they will always be displaced by a multiple of the BPM multiplier.
+
+        Args:
+            bpm_multiplier: The BPM multiplier, i.e. the karaoke BPM divided by the true song BPM. This is also the
+                            length of the shortest notes.
+            player: which player to perform the adjustment for
+
+        Returns:
+            None
+        """
         notes = self.note_lines[player]
         for i, note in enumerate(notes):
             if note.note_type != '-':
