@@ -103,6 +103,78 @@ class UltrastarSong():
         note = NoteLine(note_type, start_beat, duration, pitch, text)
         self.note_lines[player].append(note)
 
+    def adjust_notes(
+        self,
+        bpm_multiplier: int,
+        player: str = 'P1'
+    ) -> None:
+        """
+        Adjusts all the notes so that they are of a length that is a multiple of the BPM multiplier. All notes are also
+        moved so that they start and end at a beat that is divisible by the BPM multiplier. This should theoretically
+        result in all notes being closer to correct (as long as the correct BPM is being used) and so that they follow
+        the rhythm of the song. However, depending on rounding/etc., it may mess up the timings instead.
+
+        Nevertheless, true note overlaps should be respected, so any notes should not be moved too far off and will
+        still be of the correct length; besides, they will always be displaced by a multiple of the BPM multiplier.
+
+        Args:
+            bpm_multiplier: The BPM multiplier, i.e. the karaoke BPM divided by the true song BPM. This is also the
+                            length of the shortest notes.
+            player: which player to perform the adjustment for
+
+        Returns:
+            None
+        """
+        notes = self.note_lines[player]
+        for i, note in enumerate(notes):
+            if note.note_type != '-':
+                start = i
+                break
+        else:
+            return
+
+        start_beat = notes[start].start_beat
+
+        if notes[start].duration < bpm_multiplier:
+            notes[start].duration = bpm_multiplier
+        else:
+            notes[start].duration = bpm_multiplier * round(notes[start].duration / bpm_multiplier)
+
+        last_break_idx = False
+        for i, note in enumerate(notes[start+1:]):
+            if note.note_type == '-':
+                last_break_idx = i
+                continue
+            else:
+                last_break_idx = False
+
+            for previous_note in notes[start+i::-1]:
+                if previous_note.note_type != '-':
+                    break
+            else:
+                continue
+
+            previous_note_end = previous_note.start_beat + previous_note.duration
+
+            if previous_note_end > note.start_beat > previous_note_end - bpm_multiplier:
+                # If notes are overlapping due to the BPM change rather than because there is an overlap
+                note.start_beat = previous_note_end
+            else:
+                modulus = (note.start_beat - start_beat) % bpm_multiplier
+                if modulus != 0:
+                    if round(modulus / bpm_multiplier) == 1:
+                        note.start_beat += bpm_multiplier - modulus
+                    else:
+                        note.start_beat -= modulus
+
+            if note.duration < bpm_multiplier:
+                note.duration = bpm_multiplier
+            else:
+                note.duration = bpm_multiplier * round(note.duration / bpm_multiplier)
+
+            if last_break_idx:
+                notes[last_break_idx].start_beat = note.start_beat
+
     def __str__(self) -> str:
         """Produces a string representation of the song.
 

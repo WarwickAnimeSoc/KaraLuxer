@@ -291,11 +291,13 @@ class KaraLuxerWindow(QDialog):
         audio_button.clicked.connect(lambda: self._get_file_path(self.audio_input, "Audio files (*.mp3)"))
         optional_args_layout.addWidget(audio_button, 2, 2)
 
-        self.bpm = QLineEdit()
-        self.bpm.setPlaceholderText('Default is 1500.')
+        self.karaoke_bpm = QLineEdit()
+        self.karaoke_bpm.setPlaceholderText('Karaoke BPM. Default is 1500.')
+        self.song_bpm = QLineEdit()
+        self.song_bpm.setPlaceholderText('Song BPM. (optional)')
         optional_args_layout.addWidget(QLabel('BPM:'), 3, 0)
-        optional_args_layout.addWidget(self.bpm, 3, 1)
-        optional_args_layout.addWidget(QLabel('For easier mapping and singing'), 3, 2)
+        optional_args_layout.addWidget(self.karaoke_bpm, 3, 1)
+        optional_args_layout.addWidget(self.song_bpm, 3, 2)
 
         self.tv_checkbox = QCheckBox()
         optional_args_layout.addWidget(QLabel('TV Sized:'), 4, 0)
@@ -511,9 +513,17 @@ class KaraLuxerWindow(QDialog):
         tv_sized = self.tv_checkbox.isChecked()
 
         try:
-            bpm = float(self.bpm.text()) if self.bpm.text() else 1500
+            karaoke_bpm = float(self.karaoke_bpm.text()) if self.karaoke_bpm.text() else 1500
         except ValueError:
-            self._display_message(f'BPM must be a number, but "{self.bpm.text()}" was provided.', self.LVL_ERROR)
+            self._display_message(f'BPM must be a number, but "{self.karaoke_bpm.text()}" was provided.', self.LVL_ERROR)
+            self._indicator_bar_stop()
+            return
+
+        try:
+            song_bpm = float(self.song_bpm.text()) if self.song_bpm.text() else karaoke_bpm
+        except ValueError:
+            self._display_message(f'The Song BPM must be a number, but "{self.karaoke_bpm.text()}" was provided.',
+                                  self.LVL_ERROR)
             self._indicator_bar_stop()
             return
 
@@ -538,7 +548,8 @@ class KaraLuxerWindow(QDialog):
                 force_dialogue,
                 tv_sized,
                 generate_pitches,
-                bpm,
+                karaoke_bpm,
+                song_bpm,
                 enable_normalisation
             )
         except (ValueError, IOError) as e:

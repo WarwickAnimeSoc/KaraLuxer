@@ -65,7 +65,8 @@ class KaraLuxer():
         force_dialogue_lines: bool = False,
         tv_sized: bool = False,
         autopitch: bool = False,
-        bpm: float = 1500,
+        karaoke_bpm: float = 1500,
+        song_bpm: float = 1500,
         enable_normalisation: bool = True
     ) -> None:
         """Sets up the KaraLuxer instance.
@@ -91,8 +92,12 @@ class KaraLuxer():
             tv_sized (bool, optional): If True will append (TV) to the song title. (This is the convention that
                 ultrastar.es uses).
             autopitch (bool, optional): If True Karaluxer will attempt to use ultrastar_pitch to pitch the notes.
-            bpm (float, optional): The BPM (beats per minute) of the song that will be used instead of the default 1500
-                BPM. For ultrastar maps, this tends to be approximately 300, even if the true BPM is often much lower.
+            karaoke_bpm (float, optional): The BPM (beats per minute) for the karaoke txt file that will be used instead
+                of the default 1500 BPM. For ultrastar maps, this tends to be approximately 300, even if the true BPM
+                is often much lower.
+            song_bpm (float, optional): The actual BPM of the song/audio. Having the karaoke BPM a 3 or 4 multiple
+                of the Song BPM allows for easier creation of gaps in between notes. Providing this option will allow
+                KaraLuxer to arrange the notes more closely to the correct timing.
             enable_normalisation (bool, optional): If True, the audio will be normalised dueing its extraction from the
                 video file. Regardless of the flag, this happens only if the kara.moe source contains a video file and
                 if its loudness is not already normalised to 0 dB.
@@ -114,7 +119,16 @@ class KaraLuxer():
         self.force_dialogue_lines = force_dialogue_lines
         self.tv_sized = tv_sized
         self.autopitch = autopitch
-        self.bpm = bpm
+
+        self.bpm = karaoke_bpm
+
+        self.bpm_multiplier = karaoke_bpm / song_bpm
+        if self.bpm_multiplier % 1 < 1e-5:
+            self.bpm_multiplier = int(self.bpm_multiplier)
+        else:
+            raise ValueError('The Karaoke BPM must be an integer multiple of the Song BPM (provided multiple='
+                             f'{self.bpm_multiplier}). Either provide a valid combination of Karaoke and Song BPM or '
+                             f'do not set the Song BPM.')
         self.enable_normalisation = enable_normalisation
 
         # Parameter checks
@@ -673,12 +687,18 @@ class KaraLuxer():
                 else:
                     self._convert_lines(duet_parts[0], 'P1')
                     self._convert_lines(duet_parts[1], 'P2')
+
+                    if self.bpm_multiplier > 1:
+                        for player in ['P1', 'P2']:
+                            self.ultrastar_song.adjust_notes(self.bpm_multiplier, player)
             else:
                 raise ValueError('A valid decision function must be passed to select a style.')
 
         # Duets are mapped before this line.
         if self.overlap_filter_method != 'duet':
             self._convert_lines(subtitle_lines)
+            if self.bpm_multiplier > 1:
+                self.ultrastar_song.adjust_notes(self.bpm_multiplier)
 
         song_folder_name = self.ultrastar_song.meta_lines['ARTIST'] + ' - ' + self.ultrastar_song.meta_lines['TITLE']
         song_folder_name = re.sub(r'[^\w\-.() ]+', '', song_folder_name)
@@ -735,8 +755,14 @@ def main() -> None:
     argument_parser.add_argument('-tv', '--tv_sized', action='store_true', help='Mark this song as TV sized.')
     argument_parser.add_argument('-ap', '--autopitch',
                                  action='store_true', help='Pitch the song using ultrastar_pitch.')
-    argument_parser.add_argument('--bpm', type=float, default=1500.,
-                                 help='The BPM of the song. If not provided, 1500 will be used as default.')
+    argument_parser.add_argument('--karaoke-bpm', type=float, default=1500.,
+                                 help='The Karaoke BPM, i.e. the BPM that will be used in the karaoke txt file. '
+                                      'If not provided, 1500 will be used as default.')
+    argument_parser.add_argument('--song-bpm', type=int, default=0,
+                                 help='The true Song BPM, i.e. the BPM of the song. This should be different from the '
+                                      'Karaoke BPM; Karaoke BPM has to be an integer multiple of the Song BPM. '
+                                      'If provided, this is used to calculate the multiple which is used to remove '
+                                      'overlaps and otherwise clean up the timings to make mapping easier.')
     argument_parser.add_argument('-en', '--disable-normalisation', action='store_false',
                                  help='If provided, disables audio normalisation that occurs when the kara.moe source '
                                       'contains a video file whose loudness is not normalised to 0 dB.')
@@ -756,7 +782,8 @@ def main() -> None:
         arguments.force_dialogue,
         arguments.tv_sized,
         arguments.autopitch,
-        arguments.bpm,
+        arguments.karaoke_bpm,
+        arguments.song_bpm if arguments.song_bpm != 0 else arguments.karaoke_bpm,
         arguments.disable_normalisation
     )
 
