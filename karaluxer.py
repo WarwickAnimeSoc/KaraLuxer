@@ -1,5 +1,5 @@
 # Core Karaluxer functionality - CLI interface
-
+import os
 import shutil
 from typing import Callable, Dict, Optional, List, Tuple
 
@@ -43,6 +43,9 @@ SYLLABLE_REGEX = re.compile(
 # THe default pitch to assign to notes.
 DEFAULT_PITCH = 19
 
+# The threshold for normalisation using FFMPEG.
+FFMPEG_NORMALISATION_THRESHOLD = 50
+
 # Version number used to tag and identify Karaluxer produced maps.
 KARALUXER_VERSION = '3.0.0'
 
@@ -63,7 +66,8 @@ class KaraLuxer():
         tv_sized: bool = False,
         autopitch: bool = False,
         karaoke_bpm: float = 1500,
-        song_bpm: float = 1500
+        song_bpm: float = 1500,
+        enable_normalisation: bool = True
     ) -> None:
         """Sets up the KaraLuxer instance.
 
@@ -94,6 +98,9 @@ class KaraLuxer():
             song_bpm (float, optional): The actual BPM of the song/audio. Having the karaoke BPM a 3 or 4 multiple
                 of the Song BPM allows for easier creation of gaps in between notes. Providing this option will allow
                 KaraLuxer to arrange the notes more closely to the correct timing.
+            enable_normalisation (bool, optional): If True, the audio will be normalised dueing its extraction from the
+                video file. Regardless of the flag, this happens only if the kara.moe source contains a video file and
+                if its loudness is not already normalised to 0 dB.
         """
 
         # One of kara_url or ass_file must be passed to the Karaluxer instance.
@@ -112,6 +119,7 @@ class KaraLuxer():
         self.force_dialogue_lines = force_dialogue_lines
         self.tv_sized = tv_sized
         self.autopitch = autopitch
+
         self.bpm = karaoke_bpm
 
         self.bpm_multiplier = karaoke_bpm / song_bpm
@@ -121,6 +129,7 @@ class KaraLuxer():
             raise ValueError('The Karaoke BPM must be an integer multiple of the Song BPM (provided multiple='
                              f'{self.bpm_multiplier}). Either provide a valid combination of Karaoke and Song BPM or '
                              f'do not set the Song BPM.')
+        self.enable_normalisation = enable_normalisation
 
         # Parameter checks
         if kara_url and not re.match(r'https:\/\/kara\.moe\/kara\/[\w-]+\/[\w-]+', kara_url):
@@ -417,16 +426,10 @@ class KaraLuxer():
 
         # Get song artists. Prioritizes "singergroups" (band) field when present.
         artist_data = data['singergroups'] if data['singergroups'] else data['singers']
-        artists = ''
-        for singer in artist_data:
-            artists += singer['name'] + ', '
-        kara_data['artists'] = artists[:-3]
+        kara_data['artists'] = ', '.join([singer['name'] for singer in artist_data])
 
         # Get map authors
-        authors = ''
-        for author in data['authors']:
-            authors += author['name'] + ', '
-        kara_data['authors'] = authors[:-3]
+        kara_data['authors'] = ', '.join([author['name'] for author in data['authors']])
 
         anime = []
         for series in data['series']:
@@ -480,6 +483,51 @@ class KaraLuxer():
 
         with open(download_directory.joinpath(filename), 'wb') as f:
             f.write(response.content)
+
+    @staticmethod
+    def _find_normalisation_loudness(media_path: Path) -> int:
+        """
+        Finds the loudness (in dB) to increase the kara.moe video by in order to normalise the audio as close to 0dB
+        as possible without significantly degrading the quality.
+
+        Args:
+            media_path: The path to the kara.moe video file.
+
+        Returns:
+            loudness: loudness in dB
+        """
+        # FFMPEG for some reason writes both stdout and stderr into stderr.
+        ret_val = subprocess.run([str(FFMPEG_PATH), '-i', str(media_path), '-af', 'volumedetect', '-vn', '-sn', '-dn',
+                                  '-f', 'null', '-'],
+                                 stderr=subprocess.PIPE)
+
+        if ret_val.returncode:
+            print(f'WARNING: Audio loudness detection failed due to an FFMPEG error:\n{ret_val.stderr.decode()}')
+            return 0
+
+        histograms = re.findall(r'histogram_([0-9]+)db:\s*([0-9]+)', ret_val.stderr.decode())
+        if not histograms:
+            print(f'WARNING: Audio loudness detection failed because no loudness information was found in the FFMPEG '
+                  f'output. This may be a bug caused by change in the FFMPEG stdout.\n'
+                  f'FFMPEG OUTPUT="""{ret_val.stderr.decode()}"""')
+            return 0
+
+        db = int(histograms[0][0])
+        if int(histograms[0][1]) > FFMPEG_NORMALISATION_THRESHOLD:
+            if db == 0:
+                return 0
+            else:
+                return db - 1
+        else:
+            if len(histograms) == 1:
+                return db
+
+            highest = db
+            for histogram in histograms[1:]:
+                if int(histogram[1]) < FFMPEG_NORMALISATION_THRESHOLD:
+                    highest = int(histogram[0])
+                else:
+                    return highest
 
     def _autopitch(self, song_folder: Path) -> None:
         """Pitches the ultrastar file using the ultrastar_pitch utility.
@@ -555,9 +603,23 @@ class KaraLuxer():
 
                     audio_path = download_directory.joinpath(media_path.stem + '.mp3')
 
-                    ret_val = subprocess.call([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
-                    if ret_val:
-                        raise IOError('Could not convert media to mp3 with FFMPEG.')
+                    if self.enable_normalisation:
+                        normalisation_loudness = self._find_normalisation_loudness(media_path)
+
+                        failure = False
+                        if normalisation_loudness != 0:
+                            ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', '-filter:a',
+                                                      f'volume={normalisation_loudness}dB', str(audio_path)])
+                            if ret_val.returncode:
+                                print('WARNING: The audio loudness could not be normalised due to FFMPEG error in the '
+                                      'conversion process.')
+                                failure = True
+
+                    if not self.enable_normalisation or normalisation_loudness == 0 or failure:
+                        print('Extracting audio without normalising volume...')
+                        ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
+                        if ret_val.returncode:
+                            raise IOError('Could not convert media to mp3 with FFMPEG.')
 
                     self.files['audio'] = audio_path
                 else:
@@ -701,6 +763,9 @@ def main() -> None:
                                       'Karaoke BPM; Karaoke BPM has to be an integer multiple of the Song BPM. '
                                       'If provided, this is used to calculate the multiple which is used to remove '
                                       'overlaps and otherwise clean up the timings to make mapping easier.')
+    argument_parser.add_argument('-en', '--disable-normalisation', action='store_false',
+                                 help='If provided, disables audio normalisation that occurs when the kara.moe source '
+                                      'contains a video file whose loudness is not normalised to 0 dB.')
 
     argument_parser.set_defaults(ignore_overlaps=False, force_dialogue=False, tv_sized=False, autopitch=False)
 
@@ -718,7 +783,8 @@ def main() -> None:
         arguments.tv_sized,
         arguments.autopitch,
         arguments.karaoke_bpm,
-        arguments.song_bpm if arguments.song_bpm != 0 else arguments.karaoke_bpm
+        arguments.song_bpm if arguments.song_bpm != 0 else arguments.karaoke_bpm,
+        arguments.disable_normalisation
     )
 
     def cli_overlap_decision_function(overlapping_lines: List[ass.line._Event]) -> ass.line._Event:

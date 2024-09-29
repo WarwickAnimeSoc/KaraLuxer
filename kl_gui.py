@@ -365,6 +365,14 @@ class KaraLuxerWindow(QDialog):
         advanced_args_layout.addWidget(self.autopitch_checkbox, 1, 1)
         advanced_args_layout.addWidget(QLabel('Will pitch the file using "ultrastar_pitch"'), 1, 2)
 
+        self.normalise_checkbox = QCheckBox()
+        advanced_args_layout.addWidget(QLabel('Normalise audio:'), 2, 0)
+        advanced_args_layout.addWidget(self.normalise_checkbox, 2, 1)
+        advanced_args_layout.addWidget(
+            QLabel('When the Kara.moe source contains a low-volume video file, will enable loudness normalisation '
+                   'during audio extraction.'), 2, 2)
+        self.normalise_checkbox.setChecked(True)
+
         advanced_args_group.setLayout(advanced_args_layout)
 
         # Progress indicator
@@ -526,6 +534,7 @@ class KaraLuxerWindow(QDialog):
 
         force_dialogue = self.force_dialogue_checkbox.isChecked()
         generate_pitches = self.autopitch_checkbox.isChecked()
+        enable_normalisation = self.normalise_checkbox.isChecked()
 
         try:
             karaluxer_instance = KaraLuxer(
@@ -540,7 +549,8 @@ class KaraLuxerWindow(QDialog):
                 tv_sized,
                 generate_pitches,
                 karaoke_bpm,
-                song_bpm
+                song_bpm,
+                enable_normalisation
             )
         except (ValueError, IOError) as e:
             self._display_message(str(e), self.LVL_ERROR)
