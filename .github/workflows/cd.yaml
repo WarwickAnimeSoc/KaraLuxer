@@ -29,7 +29,7 @@ jobs:
           pyinstaller kl_gui.spec
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: windows
           path: ${{ github.workspace }}\dist\*.exe
@@ -65,7 +65,7 @@ jobs:
         run: pyinstaller kl_gui.spec
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: macos
           path: ${{ github.workspace }}/dist/*
@@ -99,7 +99,7 @@ jobs:
         run: pyinstaller kl_gui.spec
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: ubuntu
           path: ${{ github.workspace }}/dist/*
