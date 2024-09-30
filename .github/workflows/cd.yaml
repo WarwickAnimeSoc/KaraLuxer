@@ -37,7 +37,7 @@ jobs:
           
           echo ((gc kl_gui.spec) -replace 'tools/ffmpeg.exe', "${{steps.setup-ffmpeg.outputs.ffmpeg-path}}")
           
-          (gc kl_gui.spec) -replace 'tools/ffmpeg.exe', '${{steps.setup-ffmpeg.outputs.ffmpeg-path}}' | Out-File -encoding UTF8 kl_gui.spec
+          (gc kl_gui.spec) -replace 'tools/ffmpeg.exe', ('${{steps.setup-ffmpeg.outputs.ffmpeg-path}}' -replace '\\', '/') | Out-File -encoding UTF8 kl_gui.spec
           
           echo "-------"
           echo (gc kl_gui.spec)
@@ -65,9 +65,6 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{env.PYTHON_VERSION}}
-          #test -f "/usr/local/Cellar/ffmpeg/6.0_2/bin/ffmpeg" && sudo sed -i '' 's|tools/ffmpeg.exe|/usr/local/Cellar/ffmpeg/6.0_2/bin/ffmpeg|' kl_gui.spec
-          #test -f "/usr/local/Cellar/ffmpeg/6.1.1_2/bin/ffmpeg" && sudo sed -i '' 's|tools/ffmpeg.exe|/usr/local/Cellar/ffmpeg/6.1.1_2/bin/ffmpeg|' kl_gui.spec
-          #test -f "/usr/local/Cellar/ffmpeg/6.1.1_3/bin/ffmpeg" && sudo sed -i '' 's|tools/ffmpeg.exe|/usr/local/Cellar/ffmpeg/6.1.1_3/bin/ffmpeg|' kl_gui.spec
 
       - name: Install dependencies
         run: |
