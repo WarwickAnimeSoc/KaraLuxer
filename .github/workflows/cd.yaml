@@ -4,7 +4,7 @@ on: [push, workflow_dispatch]
 
 env:
   PYTHON_MAJOR_VERSION: '3.11'
-  PYTHON_VERSION: '3.11.10'
+  PYTHON_VERSION: '3.11.9'
 
 jobs:
   windows:
@@ -50,7 +50,7 @@ jobs:
 
       - name: Which ffmpeg
         run: |
-          man which 
+          which ls 
           which ffmpeg
 
       - name: Install python
