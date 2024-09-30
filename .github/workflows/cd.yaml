@@ -35,7 +35,7 @@ jobs:
           $txt = $enc.GetString($bytes)
           echo $txt
           
-          (gc kl_gui.spec) -replace 'tools/ffmpeg.exe', "$txt" | Out-File -encoding UTF8 kl_gui.spec
+          (gc kl_gui.spec) -replace 'tools/ffmpeg.exe', $txt | Out-File -encoding UTF8 kl_gui.spec
           (gc kl_gui.spec) -replace 'tools/', "C:/hostedtoolcache/windows/Python/${{env.PYTHON_VERSION}}/x64/Lib/site-packages/ultrastar_pitch/binaries/" | Out-File -encoding UTF8 kl_gui.spec
           (gc kl_gui.spec) -replace '.venv/', "C:/hostedtoolcache/windows/Python/${{env.PYTHON_VERSION}}/x64/" | Out-File -encoding UTF8 kl_gui.spec
           pyinstaller kl_gui.spec
@@ -66,10 +66,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew info ffmpeg >> ./temp
-          FFPATH=$(python -c "with open('temp', 'r') as f: for line in f: if '/opt/homebrew' in line: print(line.split()[0])")
+          echo "import sys\n[print(line.split()[0]) for line in sys.argv if '/opt/homebrew' in line]" >> temp.py
+          FFPATH=$(brew info ffmpeg | python ./temp.py)
           echo $FFPATH
-          rm ./temp
+          rm ./temp.py
           sudo sed -i '' "s|tools/ffmpeg.exe|$FFPATH/bin/ffmpeg|" kl_gui.spec
 
           sudo sed -i '' 's|tools/|/Users/runner/hostedtoolcache/Python/${{env.PYTHON_VERSION}}/x64/lib/python${{env.PYTHON_MAJOR_VERSION}}/site-packages/ultrastar_pitch/binaries/|' kl_gui.spec
