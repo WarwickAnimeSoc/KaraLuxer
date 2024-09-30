@@ -40,7 +40,7 @@ jobs:
           (gc kl_gui.spec) -replace 'tools/ffmpeg.exe', '${{steps.setup-ffmpeg.outputs.ffmpeg-path}}' | Out-File -encoding UTF8 kl_gui.spec
           
           echo "-------"
-          echo gc kl_gui.spec)
+          echo (gc kl_gui.spec)
           (gc kl_gui.spec) -replace 'tools/', "C:/hostedtoolcache/windows/Python/${{env.PYTHON_VERSION}}/x64/Lib/site-packages/ultrastar_pitch/binaries/" | Out-File -encoding UTF8 kl_gui.spec
           (gc kl_gui.spec) -replace '.venv/', "C:/hostedtoolcache/windows/Python/${{env.PYTHON_VERSION}}/x64/" | Out-File -encoding UTF8 kl_gui.spec
           pyinstaller kl_gui.spec
@@ -75,8 +75,8 @@ jobs:
           echo $FFPATH
           sudo sed -i '' "s|tools/ffmpeg.exe|$FFPATH/bin/ffmpeg|" kl_gui.spec
 
-          sudo sed -i '' 's|tools/|/Users/runner/hostedtoolcache/Python/${{env.PYTHON_VERSION}}/x64/lib/python${{env.PYTHON_MAJOR_VERSION}}/site-packages/ultrastar_pitch/binaries/|' kl_gui.spec
-          sudo sed -i '' 's|.venv/lib/|/Users/runner/hostedtoolcache/Python/${{env.PYTHON_VERSION}}/x64/lib/python${{env.PYTHON_MAJOR_VERSION}}/|' kl_gui.spec
+          sudo sed -i '' 's|tools/|/Users/runner/hostedtoolcache/Python/${{env.PYTHON_VERSION}}/arm64/lib/python${{env.PYTHON_MAJOR_VERSION}}/site-packages/ultrastar_pitch/binaries/|' kl_gui.spec
+          sudo sed -i '' 's|.venv/lib/|/Users/runner/hostedtoolcache/Python/${{env.PYTHON_VERSION}}/arm64/lib/python${{env.PYTHON_MAJOR_VERSION}}/|' kl_gui.spec
           
           sudo sed -i '' 's|PyQt5-Qt5|PyQt5|' requirements.txt
           python -m pip install -r requirements.txt
