@@ -50,7 +50,8 @@ jobs:
 
       - name: Which ffmpeg
         run: |
-          which ls 
+          which ls
+          echo $PATH
           which ffmpeg
 
       - name: Install python
