@@ -3,8 +3,8 @@ name: CI/CD
 on: [push, workflow_dispatch]
 
 env:
-  PYTHON_MAJOR_VERSION: '3.12'
-  PYTHON_VERSION: '3.12.6'
+  PYTHON_MAJOR_VERSION: '3.11'
+  PYTHON_VERSION: '3.11.10'
 
 jobs:
   windows:
@@ -49,7 +49,9 @@ jobs:
         run: brew install ffmpeg@6
 
       - name: Which ffmpeg
-        run: which ffmpeg
+        run: |
+          man which 
+          which ffmpeg
 
       - name: Install python
         uses: actions/setup-python@v4
