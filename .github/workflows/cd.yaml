@@ -48,21 +48,21 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install ffmpeg
-        run: brew install ffmpeg@7
-
-      - name: find ffmpeg
-        run: brew info ffmpeg@7
+        run: brew install ffmpeg
 
       - name: Install python
         uses: actions/setup-python@v4
         with:
           python-version: ${{env.PYTHON_VERSION}}
+          #test -f "/usr/local/Cellar/ffmpeg/6.0_2/bin/ffmpeg" && sudo sed -i '' 's|tools/ffmpeg.exe|/usr/local/Cellar/ffmpeg/6.0_2/bin/ffmpeg|' kl_gui.spec
+          #test -f "/usr/local/Cellar/ffmpeg/6.1.1_2/bin/ffmpeg" && sudo sed -i '' 's|tools/ffmpeg.exe|/usr/local/Cellar/ffmpeg/6.1.1_2/bin/ffmpeg|' kl_gui.spec
+          #test -f "/usr/local/Cellar/ffmpeg/6.1.1_3/bin/ffmpeg" && sudo sed -i '' 's|tools/ffmpeg.exe|/usr/local/Cellar/ffmpeg/6.1.1_3/bin/ffmpeg|' kl_gui.spec
 
       - name: Install dependencies
         run: |
-          test -f "/usr/local/Cellar/ffmpeg/6.0_2/bin/ffmpeg" && sudo sed -i '' 's|tools/ffmpeg.exe|/usr/local/Cellar/ffmpeg/6.0_2/bin/ffmpeg|' kl_gui.spec
-          test -f "/usr/local/Cellar/ffmpeg/6.1.1_2/bin/ffmpeg" && sudo sed -i '' 's|tools/ffmpeg.exe|/usr/local/Cellar/ffmpeg/6.1.1_2/bin/ffmpeg|' kl_gui.spec
-          test -f "/usr/local/Cellar/ffmpeg/6.1.1_3/bin/ffmpeg" && sudo sed -i '' 's|tools/ffmpeg.exe|/usr/local/Cellar/ffmpeg/6.1.1_3/bin/ffmpeg|' kl_gui.spec
+          FFPATH=$(brew info ffmpeg | python -c "import sys;for line in sys.argv: if '/opt/homebrew' in line: print(line.split()[0])")
+          echo $FFPATH
+          sudo sed -i '' "s|tools/ffmpeg.exe|$FFPATH/bin/ffmpeg|" kl_gui.spec
 
           sudo sed -i '' 's|tools/|/Users/runner/hostedtoolcache/Python/${{env.PYTHON_VERSION}}/x64/lib/python${{env.PYTHON_MAJOR_VERSION}}/site-packages/ultrastar_pitch/binaries/|' kl_gui.spec
           sudo sed -i '' 's|.venv/lib/|/Users/runner/hostedtoolcache/Python/${{env.PYTHON_VERSION}}/x64/lib/python${{env.PYTHON_MAJOR_VERSION}}/|' kl_gui.spec
