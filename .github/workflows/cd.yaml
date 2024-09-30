@@ -38,6 +38,9 @@ jobs:
           echo ((gc kl_gui.spec) -replace 'tools/ffmpeg.exe', "${{steps.setup-ffmpeg.outputs.ffmpeg-path}}")
           
           (gc kl_gui.spec) -replace 'tools/ffmpeg.exe', '${{steps.setup-ffmpeg.outputs.ffmpeg-path}}' | Out-File -encoding UTF8 kl_gui.spec
+          
+          echo "-------"
+          echo gc kl_gui.spec)
           (gc kl_gui.spec) -replace 'tools/', "C:/hostedtoolcache/windows/Python/${{env.PYTHON_VERSION}}/x64/Lib/site-packages/ultrastar_pitch/binaries/" | Out-File -encoding UTF8 kl_gui.spec
           (gc kl_gui.spec) -replace '.venv/', "C:/hostedtoolcache/windows/Python/${{env.PYTHON_VERSION}}/x64/" | Out-File -encoding UTF8 kl_gui.spec
           pyinstaller kl_gui.spec
@@ -68,7 +71,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          FFPATH=$(brew info ffmpeg | python -c "import sys;[print(line.split()[0]) for line in sys.argv if '/opt/homebrew' in line]")
+          FFPATH=$(brew info ffmpeg | python -c "import sys;[sys.stdout.write(line.split()[0]) for line in sys.stdin if '/opt/homebrew' in line]")
           echo $FFPATH
           sudo sed -i '' "s|tools/ffmpeg.exe|$FFPATH/bin/ffmpeg|" kl_gui.spec
 
