@@ -28,8 +28,8 @@ jobs:
       - name: Create bundle
         run: |
           (gc kl_gui.spec) -replace 'tools/ffmpeg.exe', "${{steps.setup-ffmpeg.ffmpeg-path}}" | Out-File -encoding UTF8 kl_gui.spec
-          (gc kl_gui.spec) -replace 'tools/', 'C:/hostedtoolcache/windows/Python/$PYTHON_VERSION/x64/Lib/site-packages/ultrastar_pitch/binaries/' | Out-File -encoding UTF8 kl_gui.spec
-          (gc kl_gui.spec) -replace '.venv/', 'C:/hostedtoolcache/windows/Python/$PYTHON_VERSION/x64/' | Out-File -encoding UTF8 kl_gui.spec
+          (gc kl_gui.spec) -replace 'tools/', 'C:/hostedtoolcache/windows/Python/${{env.PYTHON_VERSION}}/x64/Lib/site-packages/ultrastar_pitch/binaries/' | Out-File -encoding UTF8 kl_gui.spec
+          (gc kl_gui.spec) -replace '.venv/', 'C:/hostedtoolcache/windows/Python/${{env.PYTHON_VERSION}}/x64/' | Out-File -encoding UTF8 kl_gui.spec
           pyinstaller kl_gui.spec
 
       - name: Upload artifacts
@@ -48,12 +48,6 @@ jobs:
       - name: Install ffmpeg
         run: brew install ffmpeg@6
 
-      - name: Which ffmpeg
-        run: |
-          which ls
-          echo $PATH
-          which ffmpeg
-
       - name: Install python
         uses: actions/setup-python@v4
         with:
@@ -65,8 +59,8 @@ jobs:
           test -f "/usr/local/Cellar/ffmpeg/6.1.1_2/bin/ffmpeg" && sudo sed -i '' 's|tools/ffmpeg.exe|/usr/local/Cellar/ffmpeg/6.1.1_2/bin/ffmpeg|' kl_gui.spec
           test -f "/usr/local/Cellar/ffmpeg/6.1.1_3/bin/ffmpeg" && sudo sed -i '' 's|tools/ffmpeg.exe|/usr/local/Cellar/ffmpeg/6.1.1_3/bin/ffmpeg|' kl_gui.spec
 
-          sudo sed -i '' 's|tools/|/Users/runner/hostedtoolcache/Python/$PYTHON_VERSION/x64/lib/python$PYTHON_MAJOR_VERSION/site-packages/ultrastar_pitch/binaries/|' kl_gui.spec
-          sudo sed -i '' 's|.venv/lib/|/Users/runner/hostedtoolcache/Python/$PYTHON_VERSION/x64/lib/python$PYTHON_MAJOR_VERSION/|' kl_gui.spec
+          sudo sed -i '' 's|tools/|/Users/runner/hostedtoolcache/Python/${{env.PYTHON_VERSION}}/x64/lib/python${{env.PYTHON_MAJOR_VERSION}}/site-packages/ultrastar_pitch/binaries/|' kl_gui.spec
+          sudo sed -i '' 's|.venv/lib/|/Users/runner/hostedtoolcache/Python/${{env.PYTHON_VERSION}}/x64/lib/python${{env.PYTHON_MAJOR_VERSION}}/|' kl_gui.spec
           
           sudo sed -i '' 's|PyQt5-Qt5|PyQt5|' requirements.txt
           python -m pip install -r requirements.txt
@@ -99,8 +93,8 @@ jobs:
       - name: Install dependencies
         run: |
           sudo sed -i 's|tools/ffmpeg.exe|/usr/bin/ffmpeg|' kl_gui.spec
-          sudo sed -i 's|tools/|/opt/hostedtoolcache/Python/$PYTHON_VERSION/x64/lib/python$PYTHON_MAJOR_VERSION/site-packages/ultrastar_pitch/binaries/|' kl_gui.spec
-          sudo sed -i 's|.venv/lib/|/opt/hostedtoolcache/Python/$PYTHON_VERSION/x64/lib/python$PYTHON_MAJOR_VERSION/|' kl_gui.spec
+          sudo sed -i 's|tools/|/opt/hostedtoolcache/Python/${{env.PYTHON_VERSION}}/x64/lib/python${{env.PYTHON_MAJOR_VERSION}}/site-packages/ultrastar_pitch/binaries/|' kl_gui.spec
+          sudo sed -i 's|.venv/lib/|/opt/hostedtoolcache/Python/${{env.PYTHON_VERSION}}/x64/lib/python${{env.PYTHON_MAJOR_VERSION}}/|' kl_gui.spec
           
           sudo sed -i 's|PyQt5-Qt5|PyQt5|' requirements.txt
           python -m pip install -r requirements.txt
