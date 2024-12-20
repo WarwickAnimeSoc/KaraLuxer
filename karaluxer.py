@@ -416,9 +416,16 @@ class KaraLuxer():
 
         data = json.loads(response.content)
 
+        for info in data['lyrics_infos']:
+            if info['default'] is True:
+                sub_file = info['filename']
+                break
+        else:
+            sub_file = data['lyrics_infos'][0]['filename']
+
         kara_data = {
             'title': data['titles'][data['titles_default_language']],
-            'sub_file': data['subfile'],
+            'sub_file': sub_file,
             'media_file': data['mediafile'],
             'language': data['langs'][0]['i18n']['eng'],
             'year': data['year']
