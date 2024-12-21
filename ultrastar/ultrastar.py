@@ -140,13 +140,11 @@ class UltrastarSong():
         else:
             notes[start].duration = bpm_multiplier * round(notes[start].duration / bpm_multiplier)
 
-        last_break_idx = False
+        last_break_idx = []
         for i, note in enumerate(notes[start+1:]):
             if note.note_type == '-':
-                last_break_idx = i
+                last_break_idx.append(i+start+1)
                 continue
-            else:
-                last_break_idx = False
 
             for previous_note in notes[start+i::-1]:
                 if previous_note.note_type != '-':
@@ -173,7 +171,9 @@ class UltrastarSong():
                 note.duration = bpm_multiplier * round(note.duration / bpm_multiplier)
 
             if last_break_idx:
-                notes[last_break_idx].start_beat = note.start_beat
+                for idx in last_break_idx:
+                    notes[idx].start_beat = note.start_beat
+                last_break_idx = []
 
     def __str__(self) -> str:
         """Produces a string representation of the song.
