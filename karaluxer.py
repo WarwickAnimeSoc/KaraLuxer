@@ -510,6 +510,45 @@ class KaraLuxer():
         with open(download_directory.joinpath(filename), 'wb') as f:
             f.write(response.content)
 
+    def _extract_audio(self, media_path: Path, download_directory: Path, error: bool = True) -> Optional[Path]:
+        """Extracts an audio file from a media file and normalises if requested.
+
+        Args:
+            media_path (Path): The path to the media file from which to extract audio.
+            download_directory (Path): The work directory.
+            error (bool, optional): Whether to raise an exception when an error occurs.
+
+        Returns:
+            Optional[Path]: The path of the extracted audio. Only returns ``None`` if ``error==False`` and an error
+                            occurs.
+        """
+        if not self.files['background_video']:
+            self.files['background_video'] = media_path
+
+        audio_path = download_directory.joinpath(media_path.stem + '.mp3')
+
+        if self.enable_normalisation:
+            normalisation_loudness = self._find_normalisation_loudness(media_path)
+
+            failure = False
+            if normalisation_loudness != 0:
+                ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', '-filter:a',
+                                          f'volume={normalisation_loudness}dB', str(audio_path)])
+                if ret_val.returncode:
+                    print('WARNING: The audio loudness could not be normalised due to FFMPEG error in the '
+                          'conversion process.')
+                    failure = True
+
+        if not self.enable_normalisation or normalisation_loudness == 0 or failure:
+            print('Extracting audio without normalising volume...')
+            ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
+            if ret_val.returncode:
+                if error:
+                    raise IOError('Could not convert media to mp3 with FFMPEG.')
+                return None
+
+        return audio_path
+
     @staticmethod
     def _find_normalisation_loudness(media_path: Path) -> int:
         """
@@ -624,30 +663,7 @@ class KaraLuxer():
                 # Some songs on Kara have an mp3 as the media file. In the case where the media is not in mp3 form, it
                 # will be converted to mp3 using ffmpeg.
                 if media_path.suffix != '.mp3':
-                    if not self.files['background_video']:
-                        self.files['background_video'] = media_path
-
-                    audio_path = download_directory.joinpath(media_path.stem + '.mp3')
-
-                    if self.enable_normalisation:
-                        normalisation_loudness = self._find_normalisation_loudness(media_path)
-
-                        failure = False
-                        if normalisation_loudness != 0:
-                            ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', '-filter:a',
-                                                      f'volume={normalisation_loudness}dB', str(audio_path)])
-                            if ret_val.returncode:
-                                print('WARNING: The audio loudness could not be normalised due to FFMPEG error in the '
-                                      'conversion process.')
-                                failure = True
-
-                    if not self.enable_normalisation or normalisation_loudness == 0 or failure:
-                        print('Extracting audio without normalising volume...')
-                        ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
-                        if ret_val.returncode:
-                            raise IOError('Could not convert media to mp3 with FFMPEG.')
-
-                    self.files['audio'] = audio_path
+                    self.files['audio'] = self._extract_audio(media_path, download_directory, True)
                 else:
                     self.files['audio'] = media_path
 
@@ -666,10 +682,9 @@ class KaraLuxer():
                 media_path = download_directory.joinpath(kara_data['off_vocal'])
 
                 if media_path != '.mp3':
-                    audio_path = download_directory.joinpath(media_path.stem + '.mp3')
-                    ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
-                    if ret_val.returncode:
-                        warnings.warn('Off-vocal track could not be extracted')
+                    audio_path = self._extract_audio(media_path, download_directory, False)
+                    if audio_path is None:
+                        warnings.warn('Could not extract the off-vocal version with FFMPEG')
                     else:
                         self.files['off_vocal'] = audio_path
                     os.remove(media_path)
