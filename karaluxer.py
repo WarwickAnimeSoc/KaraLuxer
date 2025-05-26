@@ -113,7 +113,8 @@ class KaraLuxer():
             'audio': Path(audio_file) if audio_file else None,
             'background_image': Path(background_i_file) if background_i_file else None,
             'background_video': Path(background_v_file) if background_v_file else None,
-            'cover': Path(cover_file) if cover_file else None
+            'cover': Path(cover_file) if cover_file else None,
+            'off_vocal': None,
         }
         self.overlap_filter_method = overlap_filter_method
         self.force_dialogue_lines = force_dialogue_lines
@@ -428,7 +429,8 @@ class KaraLuxer():
             'sub_file': sub_file,
             'media_file': data['mediafile'],
             'language': data['langs'][0]['i18n']['eng'],
-            'year': data['year']
+            'year': data['year'],
+            'off_vocal': self._fetch_kara_off_vocal(data['siblings']),
         }
 
         # Get song artists. Prioritizes "singergroups" (band) field when present.
@@ -466,6 +468,23 @@ class KaraLuxer():
         kara_data['tags'] = tags
 
         return kara_data
+
+    def _fetch_kara_off_vocal(self, siblings: list[str]) -> Optional[str]:
+        """Searches through the kara.moe song's siblings for an off-vocal version and returns file name.
+
+        Returns:
+            Optional[str]: The file name of the off-vocal version's media file.
+        """
+        for sibling in siblings:
+            response = requests.get('https://kara.moe/api/karas/' + sibling)
+            if response.status_code != 200:
+                continue
+
+            data = json.loads(response.content)
+            versions = [ver['i18n']['eng'].lower() for ver in data['versions']]
+            if 'off vocal' in versions:
+                print('Off-vocal version found!')
+                return data['mediafile']
 
     def _fetch_kara_file(self, filename: str, download_directory: Path) -> None:
         """Fetches a file from the Kara servers and places it in the specified directory.
@@ -642,6 +661,20 @@ class KaraLuxer():
                     if not self.files['background_video']:
                         self.files['background_video'] = media_path
 
+            if not self.files['off_vocal'] and kara_data['off_vocal'] is not None:
+                self._fetch_kara_file(kara_data['off_vocal'], download_directory)
+                media_path = download_directory.joinpath(kara_data['off_vocal'])
+
+                if media_path != '.mp3':
+                    audio_path = download_directory.joinpath(media_path.stem + '.mp3')
+                    ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
+                    if ret_val.returncode:
+                        warnings.warn('Off-vocal track could not be extracted')
+                    else:
+                        self.files['off_vocal'] = audio_path
+                    os.remove(media_path)
+                else:
+                    self.files['off_vocal'] = media_path
         else:
             # Add default meta tags if Kara.moe is not used. These will need to be edited by hand in the produced
             # text file.
@@ -734,6 +767,11 @@ class KaraLuxer():
             cover_name = song_folder_name + ' [CO]' + self.files['cover'].suffix
             self.ultrastar_song.add_metadata('COVER', cover_name)
             shutil.copy(self.files['cover'], song_folder.joinpath(cover_name))
+
+        if self.files['off_vocal']:
+            cover_name = song_folder_name + ' [INSTR]' + self.files['off_vocal'].suffix
+            self.ultrastar_song.add_metadata('INSTRUMENTAL', cover_name)
+            shutil.copy(self.files['off_vocal'], song_folder.joinpath(cover_name))
 
         ultrastar_file = song_folder.joinpath(song_folder_name + '.txt')
         with open(ultrastar_file, 'w', encoding='utf-8') as f:
