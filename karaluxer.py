@@ -430,7 +430,7 @@ class KaraLuxer():
             'media_file': data['mediafile'],
             'language': data['langs'][0]['i18n']['eng'],
             'year': data['year'],
-            'off_vocal': self._fetch_kara_off_vocal(data['siblings']),
+            'off_vocal': self._fetch_kara_off_vocal(data),
         }
 
         # Get song artists. Prioritizes "singergroups" (band) field when present.
@@ -469,22 +469,28 @@ class KaraLuxer():
 
         return kara_data
 
-    def _fetch_kara_off_vocal(self, siblings: list[str]) -> Optional[str]:
-        """Searches through the kara.moe song's siblings for an off-vocal version and returns file name.
+    def _fetch_kara_off_vocal(self, og_data: dict) -> Optional[str]:
+        """Searches through the kara.moe song's relatives for an off-vocal version and returns file name.
 
         Returns:
             Optional[str]: The file name of the off-vocal version's media file.
         """
-        for sibling in siblings:
-            response = requests.get('https://kara.moe/api/karas/' + sibling)
+        og_duration = og_data['duration']
+        relatives = og_data['siblings'] + og_data['children'] + og_data['parents']
+
+        for relative in relatives:
+            response = requests.get('https://kara.moe/api/karas/' + relative)
             if response.status_code != 200:
                 continue
 
             data = json.loads(response.content)
-            versions = [ver['i18n']['eng'].lower() for ver in data['versions']]
-            if 'off vocal' in versions:
-                print('Off-vocal version found!')
-                return data['mediafile']
+            if data['duration'] != og_duration:
+                continue
+
+            for version in data['versions']:
+                if version['i18n']['eng'].lower() == 'off vocal':
+                    print('Off-vocal version found!')
+                    return data['mediafile']
 
     def _fetch_kara_file(self, filename: str, download_directory: Path) -> None:
         """Fetches a file from the Kara servers and places it in the specified directory.
