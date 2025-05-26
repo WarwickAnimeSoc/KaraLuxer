@@ -291,18 +291,34 @@ class KaraLuxerWindow(QDialog):
         audio_button.clicked.connect(lambda: self._get_file_path(self.audio_input, "Audio files (*.mp3)"))
         optional_args_layout.addWidget(audio_button, 2, 2)
 
+        self.instr_input = QLineEdit()
+        self.instr_input.setPlaceholderText('Path or kara.moe URL - overrides kara.moe instrumental.')
+        instr_button = QPushButton('Browse')
+        instr_button.clicked.connect(lambda: self._get_file_path(self.instr_input, "Audio files (*.mp3)"))
+        optional_args_layout.addWidget(QLabel('Instrumental:'), 3, 0)
+        optional_args_layout.addWidget(self.instr_input, 3, 1)
+        optional_args_layout.addWidget(instr_button, 3, 2)
+
+        self.vocals_input = QLineEdit()
+        self.vocals_input.setPlaceholderText('Path or kara.moe URL.')
+        vocals_button = QPushButton('Browse')
+        vocals_button.clicked.connect(lambda: self._get_file_path(self.vocals_input, "Audio files (*.mp3)"))
+        optional_args_layout.addWidget(QLabel('Vocals:'), 4, 0)
+        optional_args_layout.addWidget(self.vocals_input, 4, 1)
+        optional_args_layout.addWidget(vocals_button, 4, 2)
+
         self.karaoke_bpm = QLineEdit()
         self.karaoke_bpm.setPlaceholderText('Karaoke BPM. Default is 1500.')
         self.song_bpm = QLineEdit()
         self.song_bpm.setPlaceholderText('Song BPM. (optional)')
-        optional_args_layout.addWidget(QLabel('BPM:'), 3, 0)
-        optional_args_layout.addWidget(self.karaoke_bpm, 3, 1)
-        optional_args_layout.addWidget(self.song_bpm, 3, 2)
+        optional_args_layout.addWidget(QLabel('BPM:'), 5, 0)
+        optional_args_layout.addWidget(self.karaoke_bpm, 5, 1)
+        optional_args_layout.addWidget(self.song_bpm, 5, 2)
 
         self.tv_checkbox = QCheckBox()
-        optional_args_layout.addWidget(QLabel('TV Sized:'), 4, 0)
-        optional_args_layout.addWidget(self.tv_checkbox, 4, 1)
-        optional_args_layout.addWidget(QLabel('Appends "(TV)" to the song title'), 4, 2)
+        optional_args_layout.addWidget(QLabel('TV Sized:'), 6, 0)
+        optional_args_layout.addWidget(self.tv_checkbox, 6, 1)
+        optional_args_layout.addWidget(QLabel('Appends "(TV)" to the song title'), 6, 2)
 
         optional_args_group.setLayout(optional_args_layout)
 
@@ -510,6 +526,8 @@ class KaraLuxerWindow(QDialog):
         bg_file = self.bg_input.text() if self.bg_input.text() else None
         bgv_file = self.bgv_input.text() if self.bgv_input.text() else None
         audio_file = self.audio_input.text() if self.audio_input.text() else None
+        inst_file = self.instr_input.text() if self.instr_input.text() else None
+        vocals_file = self.vocals_input.text() if self.vocals_input.text() else None
         tv_sized = self.tv_checkbox.isChecked()
 
         try:
@@ -544,6 +562,8 @@ class KaraLuxerWindow(QDialog):
                 bg_file,
                 bgv_file,
                 audio_file,
+                inst_file,
+                vocals_file,
                 overlap_filter_mode,
                 force_dialogue,
                 tv_sized,
