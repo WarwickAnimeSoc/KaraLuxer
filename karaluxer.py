@@ -332,8 +332,8 @@ class KaraLuxer():
             styles = [style for style in styles if style[0] != selected_style]
 
         # Add metadata tags to the ultrastar file that name the duet sections according to their style.
-        self.ultrastar_song.add_metadata('#DUETSINGERP1', styles[0][0])
-        self.ultrastar_song.add_metadata('#DUETSINGERP2', styles[1][0])
+        self.ultrastar_song.add_metadata('DUETSINGERP1', styles[0][0])
+        self.ultrastar_song.add_metadata('DUETSINGERP2', styles[1][0])
 
         p1_lines = self._get_lines_in_style(styles[0][0], lines)
         p2_lines = self._get_lines_in_style(styles[1][0], lines)
@@ -462,7 +462,7 @@ class KaraLuxer():
             except KeyError:
                 pass
 
-        tags = ', '.join([', '.join(anime), ', '.join(song_types)])
+        tags = ', '.join(filter(None, [', '.join(anime), ', '.join(song_types)]))
         kara_data['tags'] = tags
 
         return kara_data
