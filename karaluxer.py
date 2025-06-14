@@ -1,6 +1,7 @@
 # Core Karaluxer functionality - CLI interface
 import os
 import shutil
+import tempfile
 from typing import Callable, Dict, Optional, List, Tuple
 
 from pathlib import Path
@@ -589,7 +590,8 @@ class KaraLuxer():
                 self.ultrastar_song.add_metadata('TAGS', kara_data['tags'])
             self.ultrastar_song.add_metadata('VERSION', '1.1.0')
 
-            temporary_folder = Path('tmp')
+            temporary_folder_obj = tempfile.TemporaryDirectory()
+            temporary_folder = Path(temporary_folder_obj.name)
 
             download_directory = temporary_folder.joinpath(kara_id)
             download_directory.mkdir(parents=True, exist_ok=True)
@@ -741,6 +743,7 @@ class KaraLuxer():
 
         if self.kara_url:
             shutil.rmtree(download_directory)
+            temporary_folder_obj.cleanup()
 
         if self.autopitch:
             self._autopitch(song_folder)
