@@ -35,9 +35,11 @@ KARALUXER_BPS = 100
 KARALUXER_BPM = 1500
 
 # Regular expression to capture the timing/syllables from a line by stripping out the karaoke tags.
-# Note: Supports multiple tags on a syllable (such as color) but assumes that the karaoke timing will be the first tag.
+# Note: Supports multiple tags on a syllable (such as color) but first tries to assume the karaoke tag is the first one.
 SYLLABLE_REGEX = re.compile(
-    r'(\{\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*\}[A-zÀ-ÿ _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})'
+    r'(\{\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*\}[A-zÀ-ÿ _.\-,!"\']+\s*)'
+    r'|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})'
+    r'|(\{(?:\\[0-9A-z&(), ]+?)*\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*}[A-zÀ-ÿ _.\-,!\"\']+\s*)'
 )
 
 # THe default pitch to assign to notes.
@@ -354,7 +356,7 @@ class KaraLuxer():
 
             # Get all syllables and their durations from the line.
             syllables = []
-            for sound_pair, timing_pair in re.findall(SYLLABLE_REGEX, line.text):
+            for sound_pair, timing_pair, pair_with_tag_prefix in re.findall(SYLLABLE_REGEX, line.text):
                 if sound_pair:
                     timing, syllable_text = sound_pair.split('}')
                     # Timing string might contain additional tags besides just the karaoke timings
@@ -364,6 +366,10 @@ class KaraLuxer():
                 elif timing_pair:
                     timing = timing_pair.split('\\')[1]
                     syllable_text = None
+                elif pair_with_tag_prefix:
+                    # The case where there is a tag before the karaoke tag
+                    timing, syllable_text = pair_with_tag_prefix.split('}')
+                    timing = re.findall(r'\\(?:k|kf|ko|K)([0-9.]+)', timing)[0]
                 else:
                     clean_line = re.sub(r'\{(.*?)\}', '', line.text)
                     warnings.warn('Found something unexpected in line: "{0}"'.format(clean_line))
