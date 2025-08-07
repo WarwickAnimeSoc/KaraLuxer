@@ -198,7 +198,6 @@ class UltrastarSong():
             ultrastar_file += 'P1\n'
             for note in sorted_notes_1:
                 ultrastar_file += str(note) + '\n'
-            ultrastar_file += 'E\n'
             ultrastar_file += 'P2\n'
             for note in sorted_notes_2:
                 ultrastar_file += str(note) + '\n'
