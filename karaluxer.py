@@ -655,12 +655,13 @@ class KaraLuxer():
 
         # This tag is not recognized or used by any karaoke programs, it is added by Karaluxer to help identify which
         # maps have been produced using this script.
-        self.ultrastar_song.add_metadata('KARALUXERVERSION', KARALUXER_VERSION)
+        self.ultrastar_song.add_metadata('KARALUXER-VERSION', KARALUXER_VERSION)
 
         # Like the KARALUXERVERSION tag, this tag is not recognized by karaoke programs, it is used to identify the
         # original source of the map.
         if self.kara_url:
-            self.ultrastar_song.add_metadata('KARAID', kara_id)
+            self.ultrastar_song.add_metadata('KARALUXER-KARAID', kara_id)
+            self.ultrastar_song.add_metadata('PROVIDEDBY', 'https://kara.moe')
 
         self.ultrastar_song.add_metadata('GAP', '0')
 
