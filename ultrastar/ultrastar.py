@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Iterator
 
 import warnings
 
@@ -175,19 +175,41 @@ class UltrastarSong():
                     notes[idx].start_beat = note.start_beat
                 last_break_idx = []
 
+    def sort_metadata(self) -> Iterator[tule[str, str]]:
+        """Sorts the metadata headers in a spefific order and yields the results.
+
+        Iterates over the key-value pairs from ``meta_lines`` using a specific 
+        ordering, generally:
+
+        1. ``VERSION`` header
+        2. Song information, like title, artist, genre, year, etc.
+        3. File headers, like mp3, cover, video, etc.
+        4. Karaoke information, like bpm, gap, etc.
+        5. Karaluxer metadata - ``PROVIDEDBY`` and karaluxer-unique tags
+        6. Unknown headers
+        """
+        headers = self.meta_lines.copy()
+
+        for header in ['VERSION', 'TITLE', 'ARTIST', 'LANGUAGE', 'GENRE', 'CREATOR', 'TAGS', 'YEAR', 
+                       'AUDIO', 'MP3', 'INSTRUMENTAL', 'VOCALS', 'BACKGROUND', 'COVER', 'VIDEO',
+                       'BPM', 'GAP', 'START', 'END', 'PREVIEWSTART', 'VIDEOGAP', 'COMMENT',
+                       'PROVIDEDBY', 'KARALUXER-KARAID', 'KARALUXER-VERSION']:
+            value = headers.pop(header, None)
+            if value is not None:
+                yield header, value
+
+        for header, value in headers.items():
+            yield header, value
+
     def __str__(self) -> str:
         """Produces a string representation of the song.
 
         Returns:
             str: A string containing the full ultrastar file.
         """
-
-        # Metatags are sorted alphabetically by key.
-        sorted_metadata = sorted(self.meta_lines.items(), key=lambda i: i[0])
-
         ultrastar_file = ''
 
-        for tag, value in sorted_metadata:
+        for tag, value in self.sort_metadata():
             ultrastar_file += '#{0}:{1}\n'.format(tag, value)
 
         sorted_notes_1 = sorted(self.note_lines['P1'], key=lambda n: n.start_beat)
@@ -198,7 +220,6 @@ class UltrastarSong():
             ultrastar_file += 'P1\n'
             for note in sorted_notes_1:
                 ultrastar_file += str(note) + '\n'
-            ultrastar_file += 'E\n'
             ultrastar_file += 'P2\n'
             for note in sorted_notes_2:
                 ultrastar_file += str(note) + '\n'

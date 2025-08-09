@@ -35,9 +35,11 @@ KARALUXER_BPS = 100
 KARALUXER_BPM = 1500
 
 # Regular expression to capture the timing/syllables from a line by stripping out the karaoke tags.
-# Note: Supports multiple tags on a syllable (such as color) but assumes that the karaoke timing will be the first tag.
+# Note: Supports multiple tags on a syllable (such as color) but first tries to assume the karaoke tag is the first one.
 SYLLABLE_REGEX = re.compile(
-    r'(\{\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*\}[A-zÀ-ÿ _.\-,!"\']+\s*)|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})'
+    r'(\{\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*\}[A-zÀ-ÿ _.\-,!"\']+\s*)'
+    r'|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})'
+    r'|(\{(?:\\[0-9A-z&(), ]+?)*\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*}[A-zÀ-ÿ _.\-,!\"\']+\s*)'
 )
 
 # THe default pitch to assign to notes.
@@ -353,8 +355,8 @@ class KaraLuxer():
             styles = [style for style in styles if style[0] != selected_style]
 
         # Add metadata tags to the ultrastar file that name the duet sections according to their style.
-        self.ultrastar_song.add_metadata('#DUETSINGERP1', styles[0][0])
-        self.ultrastar_song.add_metadata('#DUETSINGERP2', styles[1][0])
+        self.ultrastar_song.add_metadata('P1', styles[0][0])
+        self.ultrastar_song.add_metadata('P2', styles[1][0])
 
         p1_lines = self._get_lines_in_style(styles[0][0], lines)
         p2_lines = self._get_lines_in_style(styles[1][0], lines)
@@ -375,7 +377,7 @@ class KaraLuxer():
 
             # Get all syllables and their durations from the line.
             syllables = []
-            for sound_pair, timing_pair in re.findall(SYLLABLE_REGEX, line.text):
+            for sound_pair, timing_pair, pair_with_tag_prefix in re.findall(SYLLABLE_REGEX, line.text):
                 if sound_pair:
                     timing, syllable_text = sound_pair.split('}')
                     # Timing string might contain additional tags besides just the karaoke timings
@@ -385,6 +387,10 @@ class KaraLuxer():
                 elif timing_pair:
                     timing = timing_pair.split('\\')[1]
                     syllable_text = None
+                elif pair_with_tag_prefix:
+                    # The case where there is a tag before the karaoke tag
+                    timing, syllable_text = pair_with_tag_prefix.split('}')
+                    timing = re.findall(r'\\(?:k|kf|ko|K)([0-9.]+)', timing)[0]
                 else:
                     clean_line = re.sub(r'\{(.*?)\}', '', line.text)
                     warnings.warn('Found something unexpected in line: "{0}"'.format(clean_line))
@@ -486,7 +492,7 @@ class KaraLuxer():
             except KeyError:
                 pass
 
-        tags = ', '.join([', '.join(anime), ', '.join(song_types)])
+        tags = ', '.join(filter(None, [', '.join(anime), ', '.join(song_types)]))
         kara_data['tags'] = tags
 
         return kara_data
@@ -659,9 +665,6 @@ class KaraLuxer():
                 The decision function to use when selecting a style to discard. Must be specified if
                 self.overlap_filter_method is "duet" or "style".
         """
-
-        self.ultrastar_song.add_metadata('ENCODING', 'UTF8')
-
         if self.kara_url:
             kara_id = self.kara_url.split('/')[-1]
             kara_data = self._fetch_kara_data(kara_id)
@@ -751,12 +754,13 @@ class KaraLuxer():
 
         # This tag is not recognized or used by any karaoke programs, it is added by Karaluxer to help identify which
         # maps have been produced using this script.
-        self.ultrastar_song.add_metadata('KARALUXERVERSION', KARALUXER_VERSION)
+        self.ultrastar_song.add_metadata('KARALUXER-VERSION', KARALUXER_VERSION)
 
         # Like the KARALUXERVERSION tag, this tag is not recognized by karaoke programs, it is used to identify the
         # original source of the map.
         if self.kara_url:
-            self.ultrastar_song.add_metadata('KARAID', kara_id)
+            self.ultrastar_song.add_metadata('KARALUXER-KARAID', kara_id)
+            self.ultrastar_song.add_metadata('PROVIDEDBY', 'https://kara.moe')
 
         self.ultrastar_song.add_metadata('GAP', '0')
 
@@ -887,9 +891,27 @@ def main() -> None:
                                  help='If provided, disables audio normalisation that occurs when the kara.moe source '
                                       'contains a video file whose loudness is not normalised to 0 dB.')
 
-    argument_parser.set_defaults(ignore_overlaps=False, force_dialogue=False, tv_sized=False, autopitch=False)
+    group = argument_parser.add_mutually_exclusive_group()
+    group.add_argument('-io', '--ignore_overlaps', action='store_true',
+                       help='Ignore overlapping lines (default).')
+    group.add_argument('-fi', '--filter-individually', action='store_true',
+                       help='Filter overlapping lines individually.')
+    group.add_argument('-fs', '--filter-by-style', action='store_true',
+                       help='Filter overlapping lines by their style.')
+    group.add_argument('-md', '--map-duet', action='store_true', help='Map the song as a duet.')
+
+    argument_parser.set_defaults(ignore_overlaps=True, force_dialogue=False, tv_sized=False, autopitch=False)
 
     arguments = argument_parser.parse_args()
+
+    if arguments.filter_individually:
+        overlap_filter_method = 'individual'
+    elif arguments.filter_by_style:
+        overlap_filter_method = 'style'
+    elif arguments.map_duet:
+        overlap_filter_method = 'duet'
+    else:
+        overlap_filter_method = None
 
     karaluxer_instance = KaraLuxer(
         arguments.kara_url,
