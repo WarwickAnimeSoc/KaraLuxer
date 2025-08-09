@@ -692,6 +692,9 @@ class KaraLuxer():
             if not self.files['audio']:
                 self._fetch_kara_file(kara_data['media_file'], download_directory)
                 media_path = download_directory.joinpath(kara_data['media_file'])
+                self.ultrastar_song.add_metadata(
+                    'AUDIOURL', 'https://kara.moe/downloads/medias/' + urllib.parse.quote(kara_data['media_file'])
+                )
 
                 # Some songs on Kara have an mp3 as the media file. In the case where the media is not in mp3 form, it
                 # will be converted to mp3 using ffmpeg.
