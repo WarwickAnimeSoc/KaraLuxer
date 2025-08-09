@@ -63,6 +63,8 @@ class KaraLuxer():
         background_i_file: Optional[str] = None,
         background_v_file: Optional[str] = None,
         audio_file: Optional[str] = None,
+        off_vocal: Optional[str] = None,
+        vocals: Optional[str] = None,
         overlap_filter_method: Optional[str] = None,
         force_dialogue_lines: bool = False,
         tv_sized: bool = False,
@@ -85,6 +87,10 @@ class KaraLuxer():
             background_i_file (Optional[str], optional): The path to the background image to use. Defaults to None.
             background_v_file (Optional[str], optional): The path to the background video to use. Defaults to None.
             audio_file (Optional[str], optional): The path to the audio to use. Defaults to None.
+            off_vocal (Optional[str], optional): Either a path to and audio file containing the off-vocal track or
+                the http address to the kara.moe song containing the off-vocal track to use. Defaults to None.
+            vocals (Optional[str], optional): Either a path to and audio file containing the vocal track or
+                the http address to the kara.moe song containing the vocal track to use. Defaults to None.
             overlap_filter_method (Optional[str], optional): Sets the behaviour for how overlapping lines should be
                 handled. None will ignore overlaps, "style" will make the user select one subtitle style to keep,
                 "individual" will allow the user to select lines to discard individually, and "duet" will map the song
@@ -115,7 +121,9 @@ class KaraLuxer():
             'audio': Path(audio_file) if audio_file else None,
             'background_image': Path(background_i_file) if background_i_file else None,
             'background_video': Path(background_v_file) if background_v_file else None,
-            'cover': Path(cover_file) if cover_file else None
+            'cover': Path(cover_file) if cover_file else None,
+            'off_vocal': off_vocal if off_vocal else None,
+            'vocals': vocals if vocals else None,
         }
         self.overlap_filter_method = overlap_filter_method
         self.force_dialogue_lines = force_dialogue_lines
@@ -134,7 +142,8 @@ class KaraLuxer():
         self.enable_normalisation = enable_normalisation
 
         # Parameter checks
-        if kara_url and not re.match(r'https:\/\/kara\.moe\/kara\/[\w-]+\/[\w-]+', kara_url):
+        kara_regex = r'https:\/\/kara\.moe\/kara\/[\w-]+\/[\w-]+'
+        if kara_url and not re.match(kara_regex, kara_url):
             raise ValueError('Invalid kara.moe URL.')
 
         if self.files['subtitles']:
@@ -154,6 +163,18 @@ class KaraLuxer():
 
         if self.files['cover'] and not self.files['cover'].exists():
             raise IOError('Cover image not found.')
+
+        if self.files['off_vocal']:
+            if not re.match(kara_regex, self.files['off_vocal']):
+                self.files['off_vocal'] = Path(self.files['off_vocal'])
+                if not self.files['off_vocal'].exists():
+                    raise ValueError('Off-Vocal must be a valid path or a valid kara.moe URL.')
+
+        if self.files['vocals']:
+            if not re.match(kara_regex, self.files['vocals']):
+                self.files['vocals'] = Path(self.files['vocals'])
+                if not self.files['vocals'].exists():
+                    raise ValueError('Vocals must be a valid path or a valid kara.moe URL.')
 
         if overlap_filter_method not in [None, 'style', 'individual', 'duet']:
             raise ValueError(
@@ -434,8 +455,11 @@ class KaraLuxer():
             'sub_file': sub_file,
             'media_file': data['mediafile'],
             'language': data['langs'][0]['i18n']['eng'],
-            'year': data['year']
+            'year': data['year'],
         }
+
+        if self.files['off_vocal'] is None:
+            kara_data['off_vocal'] = self._fetch_kara_off_vocal(data)
 
         # Get song artists. Prioritizes "singergroups" (band) field when present.
         artist_data = data['singergroups'] if data['singergroups'] else data['singers']
@@ -473,6 +497,29 @@ class KaraLuxer():
 
         return kara_data
 
+    def _fetch_kara_off_vocal(self, og_data: dict) -> Optional[str]:
+        """Searches through the kara.moe song's relatives for an off-vocal version and returns file name.
+
+        Returns:
+            Optional[str]: The file name of the off-vocal version's media file.
+        """
+        og_duration = og_data['duration']
+        relatives = og_data['siblings'] + og_data['children'] + og_data['parents']
+
+        for relative in relatives:
+            response = requests.get('https://kara.moe/api/karas/' + relative)
+            if response.status_code != 200:
+                continue
+
+            data = json.loads(response.content)
+            if data['duration'] != og_duration:
+                continue
+
+            for version in data['versions']:
+                if version['i18n']['eng'].lower() == 'off vocal':
+                    print('Off-vocal version found!')
+                    return data['mediafile']
+
     def _fetch_kara_file(self, filename: str, download_directory: Path) -> None:
         """Fetches a file from the Kara servers and places it in the specified directory.
 
@@ -496,6 +543,45 @@ class KaraLuxer():
 
         with open(download_directory.joinpath(filename), 'wb') as f:
             f.write(response.content)
+
+    def _extract_audio(self, media_path: Path, download_directory: Path, error: bool = True) -> Optional[Path]:
+        """Extracts an audio file from a media file and normalises if requested.
+
+        Args:
+            media_path (Path): The path to the media file from which to extract audio.
+            download_directory (Path): The work directory.
+            error (bool, optional): Whether to raise an exception when an error occurs.
+
+        Returns:
+            Optional[Path]: The path of the extracted audio. Only returns ``None`` if ``error==False`` and an error
+                            occurs.
+        """
+        if not self.files['background_video']:
+            self.files['background_video'] = media_path
+
+        audio_path = download_directory.joinpath(media_path.stem + '.mp3')
+
+        if self.enable_normalisation:
+            normalisation_loudness = self._find_normalisation_loudness(media_path)
+
+            failure = False
+            if normalisation_loudness != 0:
+                ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', '-filter:a',
+                                          f'volume={normalisation_loudness}dB', str(audio_path)])
+                if ret_val.returncode:
+                    print('WARNING: The audio loudness could not be normalised due to FFMPEG error in the '
+                          'conversion process.')
+                    failure = True
+
+        if not self.enable_normalisation or normalisation_loudness == 0 or failure:
+            print('Extracting audio without normalising volume...')
+            ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
+            if ret_val.returncode:
+                if error:
+                    raise IOError('Could not convert media to mp3 with FFMPEG.')
+                return None
+
+        return audio_path
 
     @staticmethod
     def _find_normalisation_loudness(media_path: Path) -> int:
@@ -608,30 +694,7 @@ class KaraLuxer():
                 # Some songs on Kara have an mp3 as the media file. In the case where the media is not in mp3 form, it
                 # will be converted to mp3 using ffmpeg.
                 if media_path.suffix != '.mp3':
-                    if not self.files['background_video']:
-                        self.files['background_video'] = media_path
-
-                    audio_path = download_directory.joinpath(media_path.stem + '.mp3')
-
-                    if self.enable_normalisation:
-                        normalisation_loudness = self._find_normalisation_loudness(media_path)
-
-                        failure = False
-                        if normalisation_loudness != 0:
-                            ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', '-filter:a',
-                                                      f'volume={normalisation_loudness}dB', str(audio_path)])
-                            if ret_val.returncode:
-                                print('WARNING: The audio loudness could not be normalised due to FFMPEG error in the '
-                                      'conversion process.')
-                                failure = True
-
-                    if not self.enable_normalisation or normalisation_loudness == 0 or failure:
-                        print('Extracting audio without normalising volume...')
-                        ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
-                        if ret_val.returncode:
-                            raise IOError('Could not convert media to mp3 with FFMPEG.')
-
-                    self.files['audio'] = audio_path
+                    self.files['audio'] = self._extract_audio(media_path, download_directory, True)
                 else:
                     self.files['audio'] = media_path
 
@@ -644,6 +707,42 @@ class KaraLuxer():
                 if media_path.suffix != '.mp3':
                     if not self.files['background_video']:
                         self.files['background_video'] = media_path
+
+            if ((not self.files['off_vocal'] and kara_data['off_vocal'] is not None)
+                    or isinstance(self.files['off_vocal'], str)):
+                if not self.files['off_vocal']:
+                    off_vocal = kara_data['off_vocal']
+                else:
+                    data = self._fetch_kara_data(self.files['off_vocal'].split('/')[-1])
+                    off_vocal = data['media_file']
+
+                self._fetch_kara_file(off_vocal, download_directory)
+                media_path = download_directory.joinpath(off_vocal)
+
+                if media_path != '.mp3':
+                    audio_path = self._extract_audio(media_path, download_directory, False)
+                    if audio_path is None:
+                        warnings.warn('Could not extract the off-vocal version with FFMPEG')
+                    else:
+                        self.files['off_vocal'] = audio_path
+                    os.remove(media_path)
+                else:
+                    self.files['off_vocal'] = media_path
+
+            if isinstance(self.files['vocals'], str):
+                data = self._fetch_kara_data(self.files['vocals'].split('/')[-1])
+                self._fetch_kara_file(data['media_file'], download_directory)
+                media_path = download_directory.joinpath(data['media_file'])
+
+                if media_path != '.mp3':
+                    audio_path = self._extract_audio(media_path, download_directory, False)
+                    if audio_path is None:
+                        warnings.warn('Could not extract the vocals version with FFMPEG')
+                    else:
+                        self.files['vocals'] = audio_path
+                    os.remove(media_path)
+                else:
+                    self.files['vocals'] = media_path
 
         else:
             # Add default meta tags if Kara.moe is not used. These will need to be edited by hand in the produced
@@ -739,6 +838,16 @@ class KaraLuxer():
             self.ultrastar_song.add_metadata('COVER', cover_name)
             shutil.copy(self.files['cover'], song_folder.joinpath(cover_name))
 
+        if self.files['off_vocal']:
+            cover_name = song_folder_name + ' [INSTR]' + self.files['off_vocal'].suffix
+            self.ultrastar_song.add_metadata('INSTRUMENTAL', cover_name)
+            shutil.copy(self.files['off_vocal'], song_folder.joinpath(cover_name))
+
+        if self.files['vocals']:
+            cover_name = song_folder_name + ' [VOC]' + self.files['vocals'].suffix
+            self.ultrastar_song.add_metadata('VOCALS', cover_name)
+            shutil.copy(self.files['vocals'], song_folder.joinpath(cover_name))
+
         ultrastar_file = song_folder.joinpath(song_folder_name + '.txt')
         with open(ultrastar_file, 'w', encoding='utf-8') as f:
             f.write(str(self.ultrastar_song))
@@ -760,6 +869,11 @@ def main() -> None:
     argument_parser.add_argument('-bg', '--background', type=str, help='The background image for the song.')
     argument_parser.add_argument('-bv', '--video', type=str, help='The video file for the song.')
     argument_parser.add_argument('-a', '--audio', type=str, help='The audio file for the song.')
+    argument_parser.add_argument('-ov', '--off-vocal', type=str,
+                                 help='The off-vocal track for the song. This can be either a path to file or a kara.moe URL.')
+    argument_parser.add_argument('-vs', '--vocals', type=str,
+                                 help='The vocals track for the song. This can be either a path to file or a kara.moe URL.')
+    argument_parser.add_argument('-io', '--ignore_overlaps', action='store_true', help='Ignore overlapping lines.')
     argument_parser.add_argument('-fd', '--force_dialogue',
                                  action='store_true', help='Force use of lines marked "Dialogue".')
     argument_parser.add_argument('-tv', '--tv_sized', action='store_true', help='Mark this song as TV sized.')
@@ -806,7 +920,9 @@ def main() -> None:
         arguments.background,
         arguments.video,
         arguments.audio,
-        overlap_filter_method,
+        arguments.off_vocal,
+        arguments.vocals,
+        arguments.ignore_overlaps,
         arguments.force_dialogue,
         arguments.tv_sized,
         arguments.autopitch,
