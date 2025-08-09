@@ -175,6 +175,38 @@ class UltrastarSong():
                     notes[idx].start_beat = note.start_beat
                 last_break_idx = []
 
+    def _clean_note_lines(self, note_lines: list[NoteLine]) -> list[NoteLine]:
+        """Sorts and cleans the provided note lines:
+
+        1. Sorts the note lines by their start beat
+        2. Removes all the break notes (``-``) from the start (those preceding text notes)
+        3. Removes all the break notes (``-``) from the end (those after the last text note)
+
+        Args:
+            note_lines (list[NoteLIne]): The ``NoteLine``\ s to clean.
+
+        Returns:
+            list[NoteLIne]: The ``note_lines``, sorted and cleaned up.
+        """
+        note_lines = sorted(note_lines, key=lambda n: n.start_beat)
+        for start_cutoff, note in enumerate(note_lines):
+            if note.note_type != '-':
+                break
+
+        end_cutoff = 0
+        for note in reversed(note_lines):
+            if note.note_type != '-':
+                break
+            end_cutoff -= 1
+
+        if end_cutoff == 0:
+            end_cutoff = None
+
+        try:
+            return note_lines[start_cutoff:end_cutoff]
+        except NameError:
+            return note_lines
+
     def sort_metadata(self) -> Iterator[tule[str, str]]:
         """Sorts the metadata headers in a spefific order and yields the results.
 
@@ -201,6 +233,7 @@ class UltrastarSong():
         for header, value in headers.items():
             yield header, value
 
+
     def __str__(self) -> str:
         """Produces a string representation of the song.
 
@@ -212,8 +245,8 @@ class UltrastarSong():
         for tag, value in self.sort_metadata():
             ultrastar_file += '#{0}:{1}\n'.format(tag, value)
 
-        sorted_notes_1 = sorted(self.note_lines['P1'], key=lambda n: n.start_beat)
-        sorted_notes_2 = sorted(self.note_lines['P2'], key=lambda n: n.start_beat)
+        sorted_notes_1 = self._clean_note_lines(self.note_lines['P1'])
+        sorted_notes_2 = self._clean_note_lines(self.note_lines['P2'])
 
         if sorted_notes_2:
             # Duet map
