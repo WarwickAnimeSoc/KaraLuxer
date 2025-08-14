@@ -207,7 +207,7 @@ class UltrastarSong():
         except NameError:
             return note_lines
 
-    def sort_metadata(self) -> Iterator[tule[str, str]]:
+    def sort_metadata(self) -> Iterator[tuple[str, str]]:
         """Sorts the metadata headers in a spefific order and yields the results.
 
         Iterates over the key-value pairs from ``meta_lines`` using a specific 
