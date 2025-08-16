@@ -879,7 +879,6 @@ def main() -> None:
                                  help='The off-vocal track for the song. This can be either a path to file or a kara.moe URL.')
     argument_parser.add_argument('-vs', '--vocals', type=str,
                                  help='The vocals track for the song. This can be either a path to file or a kara.moe URL.')
-    argument_parser.add_argument('-io', '--ignore_overlaps', action='store_true', help='Ignore overlapping lines.')
     argument_parser.add_argument('-fd', '--force_dialogue',
                                  action='store_true', help='Force use of lines marked "Dialogue".')
     argument_parser.add_argument('-tv', '--tv_sized', action='store_true', help='Mark this song as TV sized.')
@@ -979,3 +978,4 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
+
