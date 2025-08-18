@@ -22,4 +22,4 @@ build/
 dist/
 
 # Tools folder
-tools/ffmpeg.exe
+tools/

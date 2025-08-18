@@ -185,7 +185,7 @@ class KaraLuxer():
         self.ultrastar_song = UltrastarSong(KARALUXER_BPS * 60)
 
     def _load_subtitle_lines(self) -> List[ass.line._Event]:
-        """Load, sort and filter the lines from the subtitle file. THis method must be run after a subtitle file has
+        """Load, sort and filter the lines from the subtitle file. This method must be run after a subtitle file has
            been provided, either manually or by downloading from Kara.
 
         Returns:
@@ -585,6 +585,18 @@ class KaraLuxer():
         return audio_path
 
     @staticmethod
+    def _create_default_cover(media_path: Path, cover_path: Path):
+        ret_val = subprocess.run(
+            [FFMPEG_PATH, '-i', str(media_path), '-vf', 'thumbnail', '-frames:v', '1', str(cover_path)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+
+        if ret_val.returncode:
+            print(f'WARNING: Could not create default cover for {media_path.name} due to an FFMPEG error:\n'
+                  f'{ret_val.stderr.decode()}')
+            raise IOError('Could not create default cover with FFMPEG.')
+
+    @staticmethod
     def _find_normalisation_loudness(media_path: Path) -> int:
         """
         Finds the loudness (in dB) to increase the kara.moe video by in order to normalise the audio as close to 0dB
@@ -842,6 +854,10 @@ class KaraLuxer():
             cover_name = song_folder_name + ' [CO]' + self.files['cover'].suffix
             self.ultrastar_song.add_metadata('COVER', cover_name)
             shutil.copy(self.files['cover'], song_folder.joinpath(cover_name))
+        else:
+            cover_name = song_folder_name + ' [CO].png'
+            self._create_default_cover(media_path, song_folder.joinpath(cover_name))
+            self.ultrastar_song.add_metadata('COVER', cover_name)
 
         if self.files['off_vocal']:
             cover_name = song_folder_name + ' [INSTR]' + self.files['off_vocal'].suffix
@@ -927,7 +943,7 @@ def main() -> None:
         arguments.audio,
         arguments.off_vocal,
         arguments.vocals,
-        arguments.ignore_overlaps,
+        overlap_filter_method,
         arguments.force_dialogue,
         arguments.tv_sized,
         arguments.autopitch,
