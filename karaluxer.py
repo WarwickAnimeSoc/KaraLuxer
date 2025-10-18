@@ -927,7 +927,7 @@ def main() -> None:
         arguments.audio,
         arguments.off_vocal,
         arguments.vocals,
-        arguments.ignore_overlaps,
+        overlap_filter_method,
         arguments.force_dialogue,
         arguments.tv_sized,
         arguments.autopitch,
