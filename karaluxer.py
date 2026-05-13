@@ -38,7 +38,7 @@ KARALUXER_BPM = 1500
 # Regular expression to capture the timing/syllables from a line by stripping out the karaoke tags.
 # Note: Supports multiple tags on a syllable (such as color) but first tries to assume the karaoke tag is the first one.
 SYLLABLE_REGEX = re.compile(
-    r'(\{\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*\}[A-zÀ-ÿ _.\-,!"\']+\s*)'
+    r'(\{\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*\}[^{}]+\s*)'
     r'|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})'
     r'|(\{(?:\\[0-9A-z&(), ]+?)*\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*}[A-zÀ-ÿ _.\-,!\"\']+\s*)'
 )
