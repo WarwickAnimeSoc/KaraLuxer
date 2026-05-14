@@ -706,8 +706,9 @@ class KaraLuxer():
             # Fetch the background video if it wasn't already downloaded for the audio. Used when a user specifies an
             # audio file manually.
             if not self.files['background_video']:
-                self._fetch_kara_file(kara_data['media_file'], download_directory)
                 media_path = download_directory.joinpath(kara_data['media_file'])
+                if not media_path.exists():
+                    self._fetch_kara_file(kara_data['media_file'], download_directory)
 
                 if media_path.suffix != '.mp3':
                     if not self.files['background_video']:
@@ -715,16 +716,16 @@ class KaraLuxer():
 
             if ((not self.files['off_vocal'] and kara_data['off_vocal'] is not None)
                     or isinstance(self.files['off_vocal'], str)):
-                if not self.files['off_vocal']:
-                    off_vocal = kara_data['off_vocal']
-                else:
+                if self.files['off_vocal']:  # User-provided kara link
                     data = self._fetch_kara_data(self.files['off_vocal'].split('/')[-1])
                     off_vocal = data['media_file']
+                else:
+                    off_vocal = kara_data['off_vocal']
 
                 self._fetch_kara_file(off_vocal, download_directory)
                 media_path = download_directory.joinpath(off_vocal)
 
-                if media_path != '.mp3':
+                if media_path.suffix != '.mp3':
                     audio_path = self._extract_audio(media_path, download_directory, False)
                     if audio_path is None:
                         warnings.warn('Could not extract the off-vocal version with FFMPEG')
