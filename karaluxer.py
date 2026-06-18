@@ -888,7 +888,7 @@ def main() -> None:
     argument_parser.add_argument('--karaoke-bpm', type=float, default=1500.,
                                  help='The Karaoke BPM, i.e. the BPM that will be used in the karaoke txt file. '
                                       'If not provided, 1500 will be used as default.')
-    argument_parser.add_argument('--song-bpm', type=int, default=0,
+    argument_parser.add_argument('--song-bpm', type=float, default=0,
                                  help='The true Song BPM, i.e. the BPM of the song. This should be different from the '
                                       'Karaoke BPM; Karaoke BPM has to be an integer multiple of the Song BPM. '
                                       'If provided, this is used to calculate the multiple which is used to remove '
@@ -928,7 +928,7 @@ def main() -> None:
         arguments.audio,
         arguments.off_vocal,
         arguments.vocals,
-        arguments.ignore_overlaps,
+        overlap_filter_method,
         arguments.force_dialogue,
         arguments.tv_sized,
         arguments.autopitch,
