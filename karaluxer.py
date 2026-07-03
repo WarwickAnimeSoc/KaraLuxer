@@ -40,7 +40,7 @@ KARALUXER_BPM = 1500
 SYLLABLE_REGEX = re.compile(
     r'(\{\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*\}[^{}]+\s*)'
     r'|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})'
-    r'|(\{(?:\\[0-9A-z&(), ]+?)*\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*}[A-zÀ-ÿ _.\-,!\"\']+\s*)'
+    r'|(\{(?:\\[0-9A-z&(), ]+?)*\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*}[^{}]+\s*)'
 )
 
 # THe default pitch to assign to notes.
