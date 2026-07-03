@@ -16,7 +16,7 @@ import urllib.parse
 import requests
 import ass
 import ass.line
-import ultrastar_pitch
+import vendor.ultrastar_pitch as ultrastar_pitch
 
 from ultrastar.ultrastar import UltrastarSong
 
@@ -28,6 +28,12 @@ elif Path('tools', 'ffmpeg.exe').exists():
     FFMPEG_PATH = Path('tools', 'ffmpeg.exe')
 else:
     FFMPEG_PATH = 'ffmpeg'
+
+# The following is the pitching model
+if getattr(sys, '_MEIPASS', False):
+    MODEL_PATH = Path(getattr(sys, '_MEIPASS'), 'pitchnet_2020_12_14.onnx')
+else:
+    MODEL_PATH = Path('tools', 'pitchnet_2020_12_14.onnx')
 
 # Rather than estimate the BPM of each song, KaraLuxer uses a fixed BPM (specified here in Beats Per Second). Subtitle
 # files for karaoke specify timings in centiseconds, therefore to avoid rounding KaraLuxer uses 100 beats per second.
@@ -640,9 +646,9 @@ class KaraLuxer():
         pitched_file = song_folder.joinpath('pitched.txt')
 
         pitch_pipeline = ultrastar_pitch.DetectionPipeline(
-            ultrastar_pitch.ProjectParser(),
+            ultrastar_pitch.ProjectParser(FFMPEG_PATH),
             ultrastar_pitch.AudioPreprocessor(stride=128),
-            ultrastar_pitch.PitchClassifier(),
+            ultrastar_pitch.PitchClassifier(MODEL_PATH),
             ultrastar_pitch.StochasticPostprocessor()
         )
 
