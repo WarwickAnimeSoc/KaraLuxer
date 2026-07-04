@@ -13,6 +13,9 @@ __pycache__/
 # Temp folder
 tmp/
 
+# Build folder
+*.egg-info/
+
 # Output folder
 out/
 output/

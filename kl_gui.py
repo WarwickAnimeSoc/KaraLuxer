@@ -582,8 +582,11 @@ class KaraLuxerWindow(QDialog):
         self.karaluxer_thread.start()
 
 
-if __name__ == '__main__':
+def main():
     app = QApplication([])
     window = KaraLuxerWindow()
     window.show()
     sys.exit(app.exec())
+
+if __name__ == '__main__':
+    main()
