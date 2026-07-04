@@ -1,6 +1,6 @@
 ass==1.0.3
 requests==2.32.5
-PyQt5==5.15.10
+pyside6-essentials==6.11.0
 pyinstaller==6.21.0
 numpy==2.5.0
 scipy==1.18.0
