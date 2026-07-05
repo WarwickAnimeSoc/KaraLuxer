@@ -183,7 +183,7 @@ class UltrastarSong():
         3. Removes all the break notes (``-``) from the end (those after the last text note)
 
         Args:
-            note_lines (list[NoteLIne]): The ``NoteLine``\ s to clean.
+            note_lines (list[NoteLIne]): The ``NoteLine``s to clean.
 
         Returns:
             list[NoteLIne]: The ``note_lines``, sorted and cleaned up.
