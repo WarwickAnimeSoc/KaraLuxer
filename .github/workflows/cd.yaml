@@ -7,13 +7,90 @@ env:
   PYTHON_VERSION: '3.13.5'
 
 jobs:
-  windows:
+  windows-ffmpeg:
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: setup msys2 and install ffmpeg dependencies
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: mingw64
+          update: true
+          install: >-
+            git
+            subversion
+            make
+            diffutils
+            coreutils
+            findutils
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-nasm
+            mingw-w64-x86_64-lame
+
+      - name: clone ffmpeg
+        run: |
+          git clone \
+            --depth 1 \
+            --branch release/9.0 \
+            --single-branch \
+            https://github.com/ffmpeg/ffmpeg.git \
+            .
+
+      - name: build lame
+        run: |
+          svn checkout svn://svn.code.sf.net/p/lame/svn/tags/RELEASE__3_100 lame
+          cd lame/lame
+          ./configure \
+            --prefix="$(cygpath -u "$GITHUB_WORKSPACE")/deps" \
+            --disable-frontend \
+            --enable-static \
+            --disable-shared
+          make -j $(nproc)
+          make install
+
+      - name: configure ffmpeg
+        run: |
+          export PKG_CONFIG_PATH="$GITHUB_WORKSPACE/deps/lib/pkgconfig"
+          export CPPFLAGS="-I$(cygpath -u "$GITHUB_WORKSPACE")/deps/include"
+          export LDFLAGS="-L$(cygpath -u "$GITHUB_WORKSPACE")/deps/lib"
+          ./configure \
+            --disable-everything \
+            --disable-programs \
+            --disable-doc \
+            --enable-ffmpeg \
+            --enable-static \
+            --disable-shared \
+            --enable-protocol=file \
+            --enable-libmp3lame \
+            --enable-decoder=mp3,opus,vorbis,aac \
+            --enable-demuxer=mp3,matroska,mp4,mov \
+            --enable-muxer=mp3,null,wav \
+            --enable-encoder=libmp3lame,pcm_s16le \
+            --enable-filter=volume,aresample,pan,volumedetect
+      
+      - name: build ffmpeg
+        run: make -j $(nproc)
+
+      - uses: actions/upload-artifact@v7
+        with: 
+          name: windows-ffmpeg
+          path: ffmpeg.exe
+
+
+
+  windows-karaluxer-gui:
+    runs-on: windows-latest
+    needs: windows-ffmpeg
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install ffmpeg
-        run: choco install ffmpeg
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows-ffmpeg
+          path: tools
 
       - name: Install python
         uses: actions/setup-python@v6
@@ -25,10 +102,6 @@ jobs:
 
       - name: Create bundle
         run: |
-          $FFPATH = Get-ChildItem 'C:\ProgramData\chocolatey\lib\ffmpeg' -Recurse -Filter ffmpeg.exe |
-            Select-Object -First 1 -ExpandProperty FullName
-          echo "ffmpeg path: $FFPATH"
-          (gc kl_gui.spec) -replace 'tools/ffmpeg.exe', ($FFPATH -replace '\\', '/') | Out-File -encoding UTF8 kl_gui.spec
           pyinstaller kl_gui.spec
 
       - name: Upload artifacts
@@ -39,13 +112,74 @@ jobs:
           retention-days: 90
 
 
-  macos:
+  macos-ffmpeg:
     runs-on: macos-latest
+    steps:
+      - name: install ffmpeg dependencies
+        run: |
+          brew update
+          brew install \
+            pkg-config nasm subversion
+
+      - name: clone ffmpeg
+        run: |
+          git clone \
+            --depth 1 \
+            --branch release/9.0 \
+            --single-branch \
+            https://github.com/ffmpeg/ffmpeg.git \
+            .
+
+      - name: build lame
+        run: |
+          svn checkout svn://svn.code.sf.net/p/lame/svn/tags/RELEASE__3_100 lame
+          cd lame/lame
+          ./configure \
+            --prefix="$GITHUB_WORKSPACE/deps" \
+            --disable-frontend \
+            --enable-static \
+            --disable-shared
+          make -j $(sysctl -n hw.ncpu)
+          make install
+
+      - name: configure ffmpeg
+        run: |
+          export PKG_CONFIG_PATH="$GITHUB_WORKSPACE/deps/lib/pkgconfig"
+          export CPPFLAGS="-I$GITHUB_WORKSPACE/deps/include"
+          export LDFLAGS="-L$GITHUB_WORKSPACE/deps/lib"
+          ./configure \
+            --disable-everything \
+            --disable-programs \
+            --disable-doc \
+            --enable-ffmpeg \
+            --enable-static \
+            --disable-shared \
+            --enable-protocol=file \
+            --enable-libmp3lame \
+            --enable-decoder=mp3,opus,vorbis,aac \
+            --enable-demuxer=mp3,matroska,mp4,mov \
+            --enable-muxer=mp3,null,wav \
+            --enable-encoder=libmp3lame,pcm_s16le \
+            --enable-filter=volume,aresample,pan,volumedetect
+      
+      - name: build ffmpeg
+        run: make -j $(sysctl -n hw.ncpu)
+
+      - uses: actions/upload-artifact@v7
+        with: 
+          name: macos-ffmpeg
+          path: ffmpeg
+
+  macos-karaluxer-gui:
+    runs-on: macos-latest
+    needs: macos-ffmpeg
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install ffmpeg
-        run: brew install ffmpeg
+      - uses: actions/download-artifact@v8
+        with:
+          name: macos-ffmpeg
+          path: tools
 
       - name: Install python
         uses: actions/setup-python@v6
@@ -57,9 +191,7 @@ jobs:
 
       - name: Create bundle
         run: |
-          FFPATH=$(realpath $(command -v ffmpeg))
-          echo "ffmpeg path: $FFPATH"
-          sudo sed -i '' "s|tools/ffmpeg.exe|$FFPATH|" kl_gui.spec
+          mv tools/ffmpeg tools/ffmpeg.exe
           pyinstaller kl_gui.spec
 
       - name: Upload artifacts
@@ -70,15 +202,59 @@ jobs:
           retention-days: 90
 
 
-  ubuntu:
-    runs-on:   ubuntu-latest
+  ubuntu-ffmpeg:
+    runs-on: ubuntu-latest
+    steps:
+      - name: install ffmpeg dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config nasm libmp3lame-dev
+
+      - name: clone ffmpeg
+        run: |
+          git clone \
+            --depth 1 \
+            --branch release/9.0 \
+            --single-branch \
+            https://github.com/ffmpeg/ffmpeg.git \
+            .
+
+      - name: configure ffmpeg
+        run: |
+          ./configure \
+            --disable-everything \
+            --disable-programs \
+            --disable-doc \
+            --enable-ffmpeg \
+            --enable-static \
+            --disable-shared \
+            --enable-protocol=file \
+            --enable-libmp3lame \
+            --enable-decoder=mp3,opus,vorbis,aac \
+            --enable-demuxer=mp3,matroska,mp4,mov \
+            --enable-muxer=mp3,null,wav \
+            --enable-encoder=libmp3lame,pcm_s16le \
+            --enable-filter=volume,aresample,pan,volumedetect
+      
+      - name: build ffmpeg
+        run: make -j $(nproc)
+
+      - uses: actions/upload-artifact@v7
+        with: 
+          name: ubuntu-ffmpeg
+          path: ffmpeg
+
+  ubuntu-karaluxer-gui:
+    runs-on: ubuntu-latest
+    needs: ubuntu-ffmpeg
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install ffmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install ffmpeg
+      - uses: actions/download-artifact@v8
+        with:
+          name: ubuntu-ffmpeg
+          path: tools
 
       - name: Install python
         uses: actions/setup-python@v6
@@ -90,9 +266,7 @@ jobs:
 
       - name: Create bundle
         run: |
-          FFPATH=$(realpath $(command -v ffmpeg))
-          echo "ffmpeg path: $FFPATH"
-          sudo sed -i "s|tools/ffmpeg.exe|$FFPATH|" kl_gui.spec
+          mv tools/ffmpeg tools/ffmpeg.exe
           pyinstaller kl_gui.spec
 
       - name: Upload artifacts

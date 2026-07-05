@@ -120,6 +120,7 @@ class ProjectParser:
                 "-i",
                 audio_path,
                 "-y",
+                "-vn",
                 "-ac",
                 "1",
                 "-ar",

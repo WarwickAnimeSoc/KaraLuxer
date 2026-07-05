@@ -573,7 +573,7 @@ class KaraLuxer():
 
             failure = False
             if normalisation_loudness != 0:
-                ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', '-filter:a',
+                ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-vn', '-b:a', '320k', '-filter:a',
                                           f'volume={normalisation_loudness}dB', str(audio_path)])
                 if ret_val.returncode:
                     print('WARNING: The audio loudness could not be normalised due to FFMPEG error in the '
@@ -582,7 +582,7 @@ class KaraLuxer():
 
         if not self.enable_normalisation or normalisation_loudness == 0 or failure:
             print('Extracting audio without normalising volume...')
-            ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
+            ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-vn', '-b:a', '320k', str(audio_path)])
             if ret_val.returncode:
                 if error:
                     raise IOError('Could not convert media to mp3 with FFMPEG.')
