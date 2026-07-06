@@ -43,6 +43,9 @@ jobs:
         run: |
           svn checkout svn://svn.code.sf.net/p/lame/svn/tags/RELEASE__3_100 lame
           cd lame/lame
+          export CFLAGS="-O3 -flto"
+          export CPPFLAGS="-O3 -flto"
+          export LDFLAGS="-flto"
           ./configure \
             --prefix="$(cygpath -u "$GITHUB_WORKSPACE")/deps" \
             --disable-frontend \
@@ -54,8 +57,8 @@ jobs:
       - name: configure ffmpeg
         run: |
           export PKG_CONFIG_PATH="$GITHUB_WORKSPACE/deps/lib/pkgconfig"
-          export CPPFLAGS="-I$(cygpath -u "$GITHUB_WORKSPACE")/deps/include"
-          export LDFLAGS="-L$(cygpath -u "$GITHUB_WORKSPACE")/deps/lib"
+          export CPPFLAGS="-I$(cygpath -u "$GITHUB_WORKSPACE")/deps/include -O3"
+          export LDFLAGS="-L$(cygpath -u "$GITHUB_WORKSPACE")/deps/lib -O3"
           ./configure \
             --disable-everything \
             --disable-programs \
@@ -63,6 +66,7 @@ jobs:
             --enable-ffmpeg \
             --enable-static \
             --disable-shared \
+            --enable-lto \
             --enable-protocol=file \
             --enable-libmp3lame \
             --enable-decoder=mp3,opus,vorbis,aac \
