@@ -20,20 +20,21 @@ import vendor.ultrastar_pitch as ultrastar_pitch
 
 from ultrastar.ultrastar import UltrastarSong
 
-# FFMPEG is used for converting Kara.moe media files to mp3. The script will first check if FFMPEG has been bundled with
-# it (through pyinstaller), secondly it will look for it in the "tools" folder and finally assume it is on PATH.
+# tools folder, or the pyinstaller bundled path
 if getattr(sys, '_MEIPASS', False):
-    FFMPEG_PATH = Path(getattr(sys, '_MEIPASS'), 'ffmpeg.exe')
-elif Path('tools', 'ffmpeg.exe').exists():
-    FFMPEG_PATH = Path('tools', 'ffmpeg.exe')
+    TOOLS_PATH = Path(getattr(sys, '_MEIPASS'))
+else:
+    TOOLS_PATH = Path(__file__).resolve().parent / 'tools'
+
+# FFMPEG is used for converting Kara.moe media files to mp3.
+# if not in tools folder, then assume exist on system
+if (TOOLS_PATH / 'ffmpeg.exe').exists():
+    FFMPEG_PATH = TOOLS_PATH / 'ffmpeg.exe'
 else:
     FFMPEG_PATH = 'ffmpeg'
 
 # The following is the pitching model
-if getattr(sys, '_MEIPASS', False):
-    MODEL_PATH = Path(getattr(sys, '_MEIPASS'), 'pitchnet_2020_12_14.onnx')
-else:
-    MODEL_PATH = Path('tools', 'pitchnet_2020_12_14.onnx')
+MODEL_PATH = TOOLS_PATH / 'pitchnet_2020_12_14.onnx'
 
 # Rather than estimate the BPM of each song, KaraLuxer uses a fixed BPM (specified here in Beats Per Second). Subtitle
 # files for karaoke specify timings in centiseconds, therefore to avoid rounding KaraLuxer uses 100 beats per second.
