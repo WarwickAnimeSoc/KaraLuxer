@@ -1,6 +1,6 @@
 [project]
 name = "karaluxer"
-version = "5.0.0a"
+version = "5.0.0"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "ass==1.0.3",
