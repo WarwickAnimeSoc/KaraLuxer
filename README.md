@@ -14,7 +14,7 @@ automatically generated from the mapped file using vendored Ultrastar Pitch, for
 
 To run the script you will need Python 3.
 
-Required packages for the script can be installed using `pip install .`. FFMPEG must be present on the
+Required packages for the script can be installed using `pip install -e .`. FFMPEG must be present on the
 system for the script to work. You can either place a FFMPEG binary in a subfolder named `tools` or have it accessible
 on your PATH.
 
