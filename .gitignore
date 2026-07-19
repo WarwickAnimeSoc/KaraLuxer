@@ -13,6 +13,9 @@ __pycache__/
 # Temp folder
 tmp/
 
+# Build folder
+*.egg-info/
+
 # Output folder
 out/
 output/
@@ -22,4 +25,4 @@ build/
 dist/
 
 # Tools folder
-tools/
+tools/ffmpeg.exe

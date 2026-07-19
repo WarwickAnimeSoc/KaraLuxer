@@ -1,18 +1,15 @@
-# -*- mode: python ; coding: utf-8 -*-
-
-
 block_cipher = None
-
 
 a = Analysis(['kl_gui.py'],
              pathex=[],
              binaries=[('tools/ffmpeg.exe', '.'), ('tools/pitchnet_2020_12_14.onnx', '.')],
-             datas=[('.venv/lib/site-packages/certifi/cacert.pem', 'certifi')],
+             datas=[],
              hiddenimports=[],
              hookspath=[],
              hooksconfig={},
              runtime_hooks=[],
              excludes=[],
+             optimize=2,
              win_no_prefer_redirects=False,
              win_private_assemblies=False,
              cipher=block_cipher,
@@ -30,7 +27,7 @@ exe = EXE(pyz,
           debug=False,
           bootloader_ignore_signals=False,
           strip=False,
-          upx=True,
+          upx=False,
           upx_exclude=[],
           runtime_tmpdir=None,
           console=True,

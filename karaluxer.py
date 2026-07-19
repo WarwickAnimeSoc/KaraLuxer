@@ -16,18 +16,25 @@ import urllib.parse
 import requests
 import ass
 import ass.line
-import ultrastar_pitch
+import vendor.ultrastar_pitch as ultrastar_pitch
 
 from ultrastar.ultrastar import UltrastarSong
 
-# FFMPEG is used for converting Kara.moe media files to mp3. The script will first check if FFMPEG has been bundled with
-# it (through pyinstaller), secondly it will look for it in the "tools" folder and finally assume it is on PATH.
+# tools folder, or the pyinstaller bundled path
 if getattr(sys, '_MEIPASS', False):
-    FFMPEG_PATH = Path(getattr(sys, '_MEIPASS'), 'ffmpeg.exe')
-elif Path('tools', 'ffmpeg.exe').exists():
-    FFMPEG_PATH = Path('tools', 'ffmpeg.exe')
+    TOOLS_PATH = Path(getattr(sys, '_MEIPASS'))
+else:
+    TOOLS_PATH = Path(__file__).resolve().parent / 'tools'
+
+# FFMPEG is used for converting Kara.moe media files to mp3.
+# if not in tools folder, then assume exist on system
+if (TOOLS_PATH / 'ffmpeg.exe').exists():
+    FFMPEG_PATH = TOOLS_PATH / 'ffmpeg.exe'
 else:
     FFMPEG_PATH = 'ffmpeg'
+
+# The following is the pitching model
+MODEL_PATH = TOOLS_PATH / 'pitchnet_2020_12_14.onnx'
 
 # Rather than estimate the BPM of each song, KaraLuxer uses a fixed BPM (specified here in Beats Per Second). Subtitle
 # files for karaoke specify timings in centiseconds, therefore to avoid rounding KaraLuxer uses 100 beats per second.
@@ -38,9 +45,9 @@ KARALUXER_BPM = 1500
 # Regular expression to capture the timing/syllables from a line by stripping out the karaoke tags.
 # Note: Supports multiple tags on a syllable (such as color) but first tries to assume the karaoke tag is the first one.
 SYLLABLE_REGEX = re.compile(
-    r'(\{\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*\}[A-zÀ-ÿ _.\-,!"\']+\s*)'
+    r'(\{\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*\}[^{}]+\s*)'
     r'|({\\(?:k|kf|ko|K)[0-9.]+[^}]*\})'
-    r'|(\{(?:\\[0-9A-z&(), ]+?)*\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*}[A-zÀ-ÿ _.\-,!\"\']+\s*)'
+    r'|(\{(?:\\[0-9A-z&(), ]+?)*\\(?:k|kf|ko|K)[0-9.]+(?:\\[0-9A-z&]+)*}[^{}]+\s*)'
 )
 
 # THe default pitch to assign to notes.
@@ -567,7 +574,7 @@ class KaraLuxer():
 
             failure = False
             if normalisation_loudness != 0:
-                ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', '-filter:a',
+                ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-vn', '-b:a', '320k', '-filter:a',
                                           f'volume={normalisation_loudness}dB', str(audio_path)])
                 if ret_val.returncode:
                     print('WARNING: The audio loudness could not be normalised due to FFMPEG error in the '
@@ -576,7 +583,7 @@ class KaraLuxer():
 
         if not self.enable_normalisation or normalisation_loudness == 0 or failure:
             print('Extracting audio without normalising volume...')
-            ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-b:a', '320k', str(audio_path)])
+            ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-vn', '-b:a', '320k', str(audio_path)])
             if ret_val.returncode:
                 if error:
                     raise IOError('Could not convert media to mp3 with FFMPEG.')
@@ -652,9 +659,9 @@ class KaraLuxer():
         pitched_file = song_folder.joinpath('pitched.txt')
 
         pitch_pipeline = ultrastar_pitch.DetectionPipeline(
-            ultrastar_pitch.ProjectParser(),
+            ultrastar_pitch.ProjectParser(FFMPEG_PATH),
             ultrastar_pitch.AudioPreprocessor(stride=128),
-            ultrastar_pitch.PitchClassifier(),
+            ultrastar_pitch.PitchClassifier(MODEL_PATH),
             ultrastar_pitch.StochasticPostprocessor()
         )
 
@@ -718,8 +725,9 @@ class KaraLuxer():
             # Fetch the background video if it wasn't already downloaded for the audio. Used when a user specifies an
             # audio file manually.
             if not self.files['background_video']:
-                self._fetch_kara_file(kara_data['media_file'], download_directory)
                 media_path = download_directory.joinpath(kara_data['media_file'])
+                if not media_path.exists():
+                    self._fetch_kara_file(kara_data['media_file'], download_directory)
 
                 if media_path.suffix != '.mp3':
                     if not self.files['background_video']:
@@ -727,16 +735,16 @@ class KaraLuxer():
 
             if ((not self.files['off_vocal'] and kara_data['off_vocal'] is not None)
                     or isinstance(self.files['off_vocal'], str)):
-                if not self.files['off_vocal']:
-                    off_vocal = kara_data['off_vocal']
-                else:
+                if self.files['off_vocal']:  # User-provided kara link
                     data = self._fetch_kara_data(self.files['off_vocal'].split('/')[-1])
                     off_vocal = data['media_file']
+                else:
+                    off_vocal = kara_data['off_vocal']
 
                 self._fetch_kara_file(off_vocal, download_directory)
                 media_path = download_directory.joinpath(off_vocal)
 
-                if media_path != '.mp3':
+                if media_path.suffix != '.mp3':
                     audio_path = self._extract_audio(media_path, download_directory, False)
                     if audio_path is None:
                         warnings.warn('Could not extract the off-vocal version with FFMPEG')
@@ -903,7 +911,7 @@ def main() -> None:
     argument_parser.add_argument('--karaoke-bpm', type=float, default=1500.,
                                  help='The Karaoke BPM, i.e. the BPM that will be used in the karaoke txt file. '
                                       'If not provided, 1500 will be used as default.')
-    argument_parser.add_argument('--song-bpm', type=int, default=0,
+    argument_parser.add_argument('--song-bpm', type=float, default=0,
                                  help='The true Song BPM, i.e. the BPM of the song. This should be different from the '
                                       'Karaoke BPM; Karaoke BPM has to be an integer multiple of the Song BPM. '
                                       'If provided, this is used to calculate the multiple which is used to remove '

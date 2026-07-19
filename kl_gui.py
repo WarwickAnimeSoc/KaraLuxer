@@ -5,8 +5,8 @@ from typing import List, Callable, Tuple
 import re
 import sys
 from threading import Thread
-from PyQt5 import QtCore
-from PyQt5.QtWidgets import (QApplication, QMessageBox, QGridLayout, QGroupBox, QLabel, QLineEdit, QPushButton,
+from PySide6 import QtCore
+from PySide6.QtWidgets import (QApplication, QMessageBox, QGridLayout, QGroupBox, QLabel, QLineEdit, QPushButton,
                              QDialog, QFileDialog, QCheckBox, QVBoxLayout, QProgressBar, QButtonGroup)
 
 import ass
@@ -18,8 +18,8 @@ from karaluxer import KaraLuxer
 class KaraLuxerThread(QtCore.QThread):
     """Custom Thread for running a KaraLuxer instance. Will raise any exceptions produced by Karaluxer."""
 
-    discard_line_signal = QtCore.pyqtSignal(object)
-    discard_style_signal = QtCore.pyqtSignal(str)
+    discard_line_signal = QtCore.Signal(object)
+    discard_style_signal = QtCore.Signal(str)
 
     def __init__(
         self,
@@ -204,8 +204,8 @@ class StyleSelectionWindow(QDialog):
 class KaraLuxerWindow(QDialog):
     """Main window for the script interface."""
 
-    overlap_window_signal = QtCore.pyqtSignal(object)
-    style_window_signal = QtCore.pyqtSignal(object)
+    overlap_window_signal = QtCore.Signal(object)
+    style_window_signal = QtCore.Signal(object)
 
     def __init__(self) -> None:
         """Constructor for the KaraLuxer window."""
@@ -435,10 +435,10 @@ class KaraLuxerWindow(QDialog):
         """
 
         file_dialogue = QFileDialog()
-        file_dialogue.setFileMode(QFileDialog.ExistingFile)
+        file_dialogue.setFileMode(QFileDialog.FileMode.ExistingFile)
         file_dialogue.setNameFilter(filter)
 
-        if file_dialogue.exec_() == QDialog.Accepted:
+        if file_dialogue.exec() == QDialog.DialogCode.Accepted:
             target.setText(file_dialogue.selectedFiles()[0])
 
     def _display_message(self, message: str, severity: int) -> None:
@@ -451,13 +451,13 @@ class KaraLuxerWindow(QDialog):
 
         message_window = QMessageBox()
         if severity == self.LVL_INFO:
-            message_window.setIcon(QMessageBox.Information)
+            message_window.setIcon(QMessageBox.Icon.Information)
             message_window.setWindowTitle('Info')
         elif severity == self.LVL_WARNING:
-            message_window.setIcon(QMessageBox.Warning)
+            message_window.setIcon(QMessageBox.Icon.Warning)
             message_window.setWindowTitle('Warning')
         else:
-            message_window.setIcon(QMessageBox.Critical)
+            message_window.setIcon(QMessageBox.Icon.Critical)
             message_window.setWindowTitle('Error')
 
         message_window.setText(message)
@@ -582,8 +582,11 @@ class KaraLuxerWindow(QDialog):
         self.karaluxer_thread.start()
 
 
-if __name__ == '__main__':
+def main():
     app = QApplication([])
     window = KaraLuxerWindow()
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
+
+if __name__ == '__main__':
+    main()

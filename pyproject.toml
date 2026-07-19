@@ -1,0 +1,26 @@
+[project]
+name = "karaluxer"
+version = "5.0.0"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "ass==1.0.3",
+    "numpy==2.5.0",
+    "onnxruntime==1.27.0",
+    "pyinstaller==6.21.0",
+    "pyside6-essentials==6.11.0",
+    "requests==2.32.5",
+    "scipy==1.18.0",
+]
+
+[project.scripts]
+karaluxer = "karaluxer:main"
+kl-gui = "kl_gui:main"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["vendor.ultrastar_pitch", "ultrastar"]
+py-modules = ["kl_gui", "karaluxer"]
+
