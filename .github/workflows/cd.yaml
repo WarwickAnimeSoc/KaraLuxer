@@ -22,13 +22,14 @@ jobs:
             git
             subversion
             make
+            autotools
+            libtool
             diffutils
             coreutils
             findutils
             mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-pkgconf
             mingw-w64-x86_64-nasm
-            mingw-w64-x86_64-lame
 
       - name: clone ffmpeg
         run: |
@@ -54,29 +55,92 @@ jobs:
           make -j $(nproc)
           make install
 
-      - name: configure ffmpeg
+      - name: build opus
         run: |
-          export PKG_CONFIG_PATH="$GITHUB_WORKSPACE/deps/lib/pkgconfig"
-          export CPPFLAGS="-I$(cygpath -u "$GITHUB_WORKSPACE")/deps/include -O3"
-          export LDFLAGS="-L$(cygpath -u "$GITHUB_WORKSPACE")/deps/lib -O3"
+          git clone --depth 1 --branch v1.6.1 https://github.com/xiph/opus.git opus
+          cd opus
+          export CFLAGS="-O3 -flto"
+          export CPPFLAGS="-O3 -flto"
+          export LDFLAGS="-flto"
+
+          ./autogen.sh
           ./configure \
+            --prefix="$(cygpath -u "$GITHUB_WORKSPACE")/deps" \
+            --enable-static \
+            --disable-shared \
+            --disable-extra-programs \
+            --enable-rtcd
+
+          make -j $(nproc)
+          make install
+
+      - name: build ogg
+        run: |
+          git clone --depth 1 --branch v1.3.6 https://github.com/xiph/ogg.git ogg
+          cd ogg
+          export CFLAGS="-O3 -flto"
+          export CPPFLAGS="-O3 -flto"
+          export LDFLAGS="-flto"
+
+          ./autogen.sh
+          ./configure \
+            --prefix="$(cygpath -u "$GITHUB_WORKSPACE")/deps" \
+            --enable-static \
+            --disable-shared
+
+          make -j $(nproc)
+          make install
+
+      - name: build vorbis
+        run: |
+          git clone --depth 1 --branch v1.3.7 https://github.com/xiph/vorbis.git vorbis
+          cd vorbis
+          export PKG_CONFIG_PATH="$(cygpath -u "$GITHUB_WORKSPACE")/deps/lib/pkgconfig"
+          export CFLAGS="-O3 -flto"
+          export CPPFLAGS="-O3 -flto"
+          export LDFLAGS="-flto"
+
+          ./autogen.sh
+          ./configure \
+            --prefix="$(cygpath -u "$GITHUB_WORKSPACE")/deps" \
+            --enable-static \
+            --disable-shared \
+            --disable-docs \
+            --disable-examples
+
+          make -j $(nproc)
+          make install
+
+      - name: build ffmpeg
+        run: |
+          export PKG_CONFIG_PATH="$(cygpath -u "$GITHUB_WORKSPACE")/deps/lib/pkgconfig"
+          export CPPFLAGS="-I$(cygpath -u "$GITHUB_WORKSPACE")/deps/include -O3"
+          export LDFLAGS="-L$(cygpath -u "$GITHUB_WORKSPACE")/deps/lib"
+
+          ./configure \
+            --prefix="$(cygpath -u "$GITHUB_WORKSPACE")/deps" \
             --disable-everything \
+            --disable-autodetect \
             --disable-programs \
             --disable-doc \
+            --disable-debug \
             --enable-ffmpeg \
+            --pkg-config-flags=--static \
+            --extra-ldflags=-static \
             --enable-static \
             --disable-shared \
             --enable-lto \
             --enable-protocol=file \
             --enable-libmp3lame \
+            --enable-libopus \
+            --enable-libvorbis \
             --enable-decoder=mp3,opus,vorbis,aac \
             --enable-demuxer=mp3,matroska,mp4,mov \
-            --enable-muxer=mp3,null,wav \
-            --enable-encoder=libmp3lame,pcm_s16le \
+            --enable-muxer=adts,ogg,mp3,null,wav \
+            --enable-encoder=aac,libmp3lame,libopus,libvorbis,pcm_s16le \
             --enable-filter=volume,aresample,pan,volumedetect
-      
-      - name: build ffmpeg
-        run: make -j $(nproc)
+
+          make -j $(nproc)
 
       - uses: actions/upload-artifact@v7
         with: 
@@ -123,7 +187,12 @@ jobs:
         run: |
           brew update
           brew install \
-            pkg-config nasm subversion
+            pkg-config \
+            autoconf \
+            automake \
+            libtool \
+            nasm \
+            subversion
 
       - name: clone ffmpeg
         run: |
@@ -143,31 +212,100 @@ jobs:
             --disable-frontend \
             --enable-static \
             --disable-shared
+
           make -j $(sysctl -n hw.ncpu)
           make install
 
-      - name: configure ffmpeg
+      - name: build opus
+        run: |
+          git clone --depth 1 --branch v1.6.1 https://github.com/xiph/opus opus
+          cd opus
+          export CFLAGS="-O3 -flto"
+          export CPPFLAGS="-O3 -flto"
+          export LDFLAGS="-flto"
+
+          ./autogen.sh
+          ./configure \
+            --prefix="$GITHUB_WORKSPACE/deps" \
+            --enable-static \
+            --disable-shared \
+            --disable-extra-programs \
+            --enable-rtcd
+
+          make -j $(sysctl -n hw.ncpu)
+          make install
+
+      - name: build ogg
+        run: |
+          git clone --depth 1 --branch v1.3.6 https://github.com/xiph/ogg.git ogg
+          cd ogg
+          export CFLAGS="-O3 -flto"
+          export CPPFLAGS="-O3 -flto"
+          export LDFLAGS="-flto"
+
+          ./autogen.sh
+          ./configure \
+            --prefix="$GITHUB_WORKSPACE/deps" \
+            --enable-static \
+            --disable-shared
+
+          make -j $(sysctl -n hw.ncpu)
+          make install
+
+      - name: build vorbis
+        run: |
+          git clone --depth 1 --branch v1.3.7 https://github.com/xiph/vorbis.git vorbis
+          cd vorbis
+
+          export PKG_CONFIG_PATH="$GITHUB_WORKSPACE/deps/lib/pkgconfig"
+          export CFLAGS="-O3 -flto"
+          export CPPFLAGS="-O3 -flto"
+          export LDFLAGS="-flto"
+
+          ./autogen.sh
+
+          # flag does not exist, patch it away
+          sed -i '' 's/-force_cpusubtype_ALL//g' configure
+
+          ./configure \
+            --prefix="$GITHUB_WORKSPACE/deps" \
+            --enable-static \
+            --disable-shared \
+            --disable-docs \
+            --disable-examples
+
+          make -j $(sysctl -n hw.ncpu)
+          make install
+
+      - name: build ffmpeg
         run: |
           export PKG_CONFIG_PATH="$GITHUB_WORKSPACE/deps/lib/pkgconfig"
           export CPPFLAGS="-I$GITHUB_WORKSPACE/deps/include"
           export LDFLAGS="-L$GITHUB_WORKSPACE/deps/lib"
+
           ./configure \
+            --prefix="$GITHUB_WORKSPACE/deps" \
             --disable-everything \
+            --disable-autodetect \
             --disable-programs \
             --disable-doc \
+            --disable-debug \
             --enable-ffmpeg \
             --enable-static \
             --disable-shared \
+            --pkg-config-flags=--static \
+            --enable-lto \
             --enable-protocol=file \
             --enable-libmp3lame \
+            --enable-libopus \
+            --enable-libvorbis \
             --enable-decoder=mp3,opus,vorbis,aac \
             --enable-demuxer=mp3,matroska,mp4,mov \
-            --enable-muxer=mp3,null,wav \
-            --enable-encoder=libmp3lame,pcm_s16le \
+            --enable-muxer=adts,ogg,mp3,null,wav \
+            --enable-encoder=aac,libmp3lame,libopus,libvorbis,pcm_s16le \
             --enable-filter=volume,aresample,pan,volumedetect
       
-      - name: build ffmpeg
-        run: make -j $(sysctl -n hw.ncpu)
+          make -j $(sysctl -n hw.ncpu)
 
       - uses: actions/upload-artifact@v7
         with: 
@@ -213,7 +351,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential pkg-config nasm libmp3lame-dev
+            build-essential \
+            pkg-config \
+            nasm \
+            libmp3lame-dev \
+            libvorbis-dev \
+            libopus-dev
 
       - name: clone ffmpeg
         run: |
@@ -224,25 +367,30 @@ jobs:
             https://github.com/ffmpeg/ffmpeg.git \
             .
 
-      - name: configure ffmpeg
+      - name: build ffmpeg
         run: |
           ./configure \
             --disable-everything \
+            --disable-autodetect \
             --disable-programs \
             --disable-doc \
+            --disable-debug \
             --enable-ffmpeg \
             --enable-static \
             --disable-shared \
+            --pkg-config-flags=--static \
+            --enable-lto \
             --enable-protocol=file \
             --enable-libmp3lame \
+            --enable-libopus \
+            --enable-libvorbis \
             --enable-decoder=mp3,opus,vorbis,aac \
             --enable-demuxer=mp3,matroska,mp4,mov \
-            --enable-muxer=mp3,null,wav \
-            --enable-encoder=libmp3lame,pcm_s16le \
+            --enable-muxer=adts,ogg,mp3,null,wav \
+            --enable-encoder=aac,libmp3lame,libopus,libvorbis,pcm_s16le \
             --enable-filter=volume,aresample,pan,volumedetect
       
-      - name: build ffmpeg
-        run: make -j $(nproc)
+          make -j $(nproc)
 
       - uses: actions/upload-artifact@v7
         with: 
