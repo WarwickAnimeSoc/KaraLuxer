@@ -110,8 +110,8 @@ class ProjectParser:
         assert (
             isinstance(sample_rate, int) and sample_rate > 0
         ), err_str1.format("sample_rate")
-        # convert mp3 to temporary mono wav file
-        audio_path = os.path.join(self.proj_dir, self.meta["#MP3"])
+        # convert audio to temporary mono wav file
+        audio_path = os.path.join(self.proj_dir, self.meta["#AUDIO"])
         wav_path = os.path.join(self.proj_dir, "tmp.wav")
         subprocess._cleanup()
         subprocess.run(

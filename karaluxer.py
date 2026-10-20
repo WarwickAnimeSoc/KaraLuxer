@@ -26,7 +26,7 @@ if getattr(sys, '_MEIPASS', False):
 else:
     TOOLS_PATH = Path(__file__).resolve().parent / 'tools'
 
-# FFMPEG is used for converting Kara.moe media files to mp3.
+# FFMPEG is used for converting Kara.moe media files to audio.
 # if not in tools folder, then assume exist on system
 if (TOOLS_PATH / 'ffmpeg.exe').exists():
     FFMPEG_PATH = TOOLS_PATH / 'ffmpeg.exe'
@@ -567,14 +567,16 @@ class KaraLuxer():
         if not self.files['background_video']:
             self.files['background_video'] = media_path
 
-        audio_path = download_directory.joinpath(media_path.stem + '.mp3')
+        audio_codec = self._find_audio_codec_format(media_path)
+
+        audio_path = download_directory.joinpath(media_path.stem + "." + audio_codec)
 
         if self.enable_normalisation:
             normalisation_loudness = self._find_normalisation_loudness(media_path)
 
             failure = False
             if normalisation_loudness != 0:
-                ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-vn', '-b:a', '320k', '-filter:a',
+                ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-vn', '-filter:a',
                                           f'volume={normalisation_loudness}dB', str(audio_path)])
                 if ret_val.returncode:
                     print('WARNING: The audio loudness could not be normalised due to FFMPEG error in the '
@@ -583,13 +585,50 @@ class KaraLuxer():
 
         if not self.enable_normalisation or normalisation_loudness == 0 or failure:
             print('Extracting audio without normalising volume...')
-            ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-vn', '-b:a', '320k', str(audio_path)])
+            ret_val = subprocess.run([FFMPEG_PATH, '-i', str(media_path), '-vn', '-c:a', 'copy', str(audio_path)])
             if ret_val.returncode:
                 if error:
-                    raise IOError('Could not convert media to mp3 with FFMPEG.')
+                    raise IOError(f'Could not convert media to {audio_codec} with FFMPEG.')
                 return None
 
         return audio_path
+
+    @staticmethod
+    def _find_audio_codec_format(media_path: Path) -> str:
+        """
+        Get the audio codec of the media audio stream for extraction.
+
+        Args:
+            media_path: The path to the kara.moe video file.
+
+        Returns:
+            codec: the audio codec name
+        """
+        ret_val = subprocess.run([str(FFMPEG_PATH), '-i', str(media_path)], stderr=subprocess.PIPE)
+
+        extracted_codec = None
+        for line in ret_val.stderr.decode().splitlines():
+            if not line.startswith('  Stream '):
+                # not a line reporting stream
+                continue
+
+            find_codec = re.findall(r'Audio: (\w+)', line)
+            if len(find_codec) == 0:
+                # not a line reporting audio stream
+                continue
+
+            codec = find_codec[0]
+            print(codec)
+            if extracted_codec is not None and codec != extracted_codec:
+                print('WARNING: Multiple audio streams with independent codecs found.')
+                extracted_codec = 'opus'
+            else:
+                extracted_codec = codec
+
+        if extracted_codec is None:
+            print('WARNING: Audio stream not found, defaulting to opus.')
+            extracted_codec = 'opus'
+        return extracted_codec
 
     @staticmethod
     def _find_normalisation_loudness(media_path: Path) -> int:
@@ -703,12 +742,8 @@ class KaraLuxer():
                     'AUDIOURL', 'https://kara.moe/downloads/medias/' + urllib.parse.quote(kara_data['media_file'])
                 )
 
-                # Some songs on Kara have an mp3 as the media file. In the case where the media is not in mp3 form, it
-                # will be converted to mp3 using ffmpeg.
-                if media_path.suffix != '.mp3':
-                    self.files['audio'] = self._extract_audio(media_path, download_directory, True)
-                else:
-                    self.files['audio'] = media_path
+                # Kara.moe sources only have supported media formats
+                self.files['audio'] = self._extract_audio(media_path, download_directory)
 
             # Fetch the background video if it wasn't already downloaded for the audio. Used when a user specifies an
             # audio file manually.
@@ -717,7 +752,7 @@ class KaraLuxer():
                 if not media_path.exists():
                     self._fetch_kara_file(kara_data['media_file'], download_directory)
 
-                if media_path.suffix != '.mp3':
+                if media_path.suffix in ['.mp4', '.mkv', '.webm']:
                     if not self.files['background_video']:
                         self.files['background_video'] = media_path
 
@@ -732,30 +767,18 @@ class KaraLuxer():
                 self._fetch_kara_file(off_vocal, download_directory)
                 media_path = download_directory.joinpath(off_vocal)
 
-                if media_path.suffix != '.mp3':
-                    audio_path = self._extract_audio(media_path, download_directory, False)
-                    if audio_path is None:
-                        warnings.warn('Could not extract the off-vocal version with FFMPEG')
-                    else:
-                        self.files['off_vocal'] = audio_path
-                    os.remove(media_path)
+                audio_path = self._extract_audio(media_path, download_directory, False)
+                if audio_path is None:
+                    warnings.warn('Could not extract the off-vocal version with FFMPEG')
                 else:
-                    self.files['off_vocal'] = media_path
+                    self.files['off_vocal'] = audio_path
+                os.remove(media_path)
 
             if isinstance(self.files['vocals'], str):
                 data = self._fetch_kara_data(self.files['vocals'].split('/')[-1])
                 self._fetch_kara_file(data['media_file'], download_directory)
                 media_path = download_directory.joinpath(data['media_file'])
-
-                if media_path != '.mp3':
-                    audio_path = self._extract_audio(media_path, download_directory, False)
-                    if audio_path is None:
-                        warnings.warn('Could not extract the vocals version with FFMPEG')
-                    else:
-                        self.files['vocals'] = audio_path
-                    os.remove(media_path)
-                else:
-                    self.files['vocals'] = media_path
+                self.files['vocals'] = media_path
 
         else:
             # Add default meta tags if Kara.moe is not used. These will need to be edited by hand in the produced
@@ -833,7 +856,7 @@ class KaraLuxer():
 
         if self.files['audio']:
             cover_name = song_folder_name + self.files['audio'].suffix
-            self.ultrastar_song.add_metadata('MP3', cover_name)
+            self.ultrastar_song.add_metadata('AUDIO', cover_name)
             shutil.copy(self.files['audio'], song_folder.joinpath(cover_name))
 
         if self.files['background_image']:
