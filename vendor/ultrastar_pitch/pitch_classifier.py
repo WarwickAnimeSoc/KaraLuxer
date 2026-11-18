@@ -7,10 +7,11 @@
 """
 
 import os
-import sys
+os.environ['ORT_DISABLE_TELEMETRY'] = "1"
 import numpy as np
 import onnxruntime as rt
 
+rt.disable_telemetry_events()
 
 class PitchClassifier:
     """ determines pitch by a trained neuronal network """
