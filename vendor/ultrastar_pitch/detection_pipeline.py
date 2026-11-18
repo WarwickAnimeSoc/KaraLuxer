@@ -32,7 +32,7 @@ class DetectionPipeline:
 
     def transform(
         self, notes_org: str, notes_new: str, postproc: bool = True
-    ) -> (np.ndarray, np.ndarray):
+    ) -> tuple[np.ndarray, np.ndarray]:
         """ load note file, extract audio, detect pitches, and write to new notes.txt """
         self.project_parser.load_note_file(notes_org)
         pitches_org = self.project_parser.dump_pitches()

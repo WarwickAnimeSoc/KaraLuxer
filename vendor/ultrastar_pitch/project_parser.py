@@ -7,7 +7,6 @@
 @author        paradigm
 """
 import os
-import sys
 import wave
 import subprocess
 import numpy as np

@@ -1,10 +1,9 @@
 # GUI for KaraLuxer
 
-from typing import List, Callable, Tuple
+from typing import List, Tuple
 
 import re
 import sys
-from threading import Thread
 from PySide6 import QtCore
 from PySide6.QtWidgets import (QApplication, QMessageBox, QGridLayout, QGroupBox, QLabel, QLineEdit, QPushButton,
                              QDialog, QFileDialog, QCheckBox, QVBoxLayout, QProgressBar, QButtonGroup)
